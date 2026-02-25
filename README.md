@@ -1,227 +1,104 @@
-# 批量邮件发送工具
+# Bulk Email Sender
 
-一个专为研究生推免申请设计的批量邮件发送工具，支持个性化邮件内容、附件发送、发送记录管理等功能。
+面向研究申请场景的批量邮件发送工具，提供两种形态：
+- `Desktop`：Tauri + React 图形客户端（推荐给非开发用户）
+- `Core Engine`：Python 发送引擎（支持脚本化与自动化）
 
-## ⚠️ 重要说明
+## 功能概览
 
-**本工具的核心在于批量发送邮件，导师信息需要用户自行获取。**
+- 批量发送个性化邮件（支持 `{teacher_name}` 占位符）
+- 收件人文件校验（JSON / XLSX）
+- SMTP 连接测试与发送前校验
+- 已发送记录去重（避免重复触达）
+- 运行时自检与基础打包工具链
 
-### 关于导师信息获取
+## 快速安装（Desktop）
 
-- 🎯 **核心功能**：本工具专注于邮件的批量发送，不包含爬虫功能
-- 🏫 **数据来源**：需要用户自行从学校官网获取导师邮箱信息
-- 🔧 **技术要求**：由于每个学校官网结构不同，需要针对性编写爬虫脚本
-- 📚 **学习资源**：没有爬虫基础者建议先学习[Python爬虫入门教程](https://mp.weixin.qq.com/s/1mp60tfnLcVMFH7w6S6rQg)
-- 🛠️ **替代方案**：也可以使用八爪鱼等傻瓜式爬虫工具获取数据
+请在 [Releases](https://github.com/daytime001/bulk-email-sender/releases) 下载对应系统安装包。
 
-## ✨ 主要功能
+| 平台 | 推荐安装包 | 说明 |
+|---|---|---|
+| Windows | `bulk-email-sender_v*_windows_*.msi` | 标准安装器 |
+| macOS | `bulk-email-sender_v*_darwin_*.dmg` | 磁盘镜像安装 |
+| Linux | `bulk-email-sender_v*_linux_*.AppImage` | 单文件可执行包 |
 
-- 🚀 **批量发送**：支持向多位导师批量发送个性化邮件(姓名称呼不同)
-- 📎 **附件支持**：自动添加简历、成绩单等附件文件
-- 📝 **模板定制**：支持自定义邮件主题和正文模板
-- 📊 **发送记录**：自动记录已发送邮箱，避免重复发送
-- ⏱️ **智能间隔**：随机发送间隔，避免被识别为垃圾邮件
-- 🔧 **配置测试**：提供配置测试工具，确保邮箱设置正确
-- 📈 **发送统计**：详细的发送成功率和失败统计
+> 发布资产已做精简：仅保留每个平台 1 种主安装格式，避免同平台多包型干扰。
 
-## 📋 系统要求
+## 使用流程（Desktop）
 
-- Python 3.9+
-- 任意支持 SMTP 的邮箱账号（建议开启授权码或应用专用密码）
+1. 配置 SMTP（邮箱、授权码、主机、端口）
+2. 导入收件人文件（`data/teachers.json` 或 `.xlsx`）
+3. 填写主题与正文模板
+4. 发送前执行 SMTP 测试
+5. 启动批量发送并查看进度与失败项
 
-## 🚀 快速开始
+## 使用流程（Python Engine）
 
-### 1. 下载代码
+### 环境准备
 
 ```bash
-git clone https://github.com/your-username/bulk-email-sender.git
-cd bulk-email-sender
+uv sync --group dev
 ```
 
-### 2. 配置邮箱信息
+### 运行测试
 
-编辑 `config.py` 文件：
-
-```python
-# 邮箱配置（以任意 SMTP 邮箱为例）
-SENDER_EMAIL = 'your_email@example.com'  # 发件邮箱
-SENDER_PASSWORD = 'your_authorization_code'  # SMTP 授权码/应用专用密码
-SENDER_NAME = '您的姓名'  # 发件人姓名
-
-# 邮件内容
-EMAIL_SUBJECT = '推免自荐+学校名称+您的姓名'
-EMAIL_CONTENT = """您的邮件正文模板..."""
+```bash
+uv run ruff check .
+uv run pytest -q
 ```
 
-### 3. 准备导师数据
+### 入口脚本
 
-**重要**：您需要自行获取导师邮箱信息，然后编辑 `data/teachers.json` 文件：
+```bash
+uv run python main.py
+uv run python test_config.py
+```
+
+## 收件人数据格式
+
+### JSON（对象）
 
 ```json
 {
-    "teacher1@university.edu.cn": "张教授",
-    "teacher2@university.edu.cn": "李教授",
-    "teacher3@university.edu.cn": "王教授"
+  "teacher1@university.edu.cn": "张教授",
+  "teacher2@university.edu.cn": "李教授"
 }
 ```
 
-**获取导师信息的方法**：
-- 手动从学校官网收集
-- 编写爬虫脚本（需要一定技术基础）
-- 使用八爪鱼等可视化爬虫工具
+### JSON（数组）
 
-### 4. 添加附件（可选）
-
-将附件文件放入 `attachments/` 文件夹，并在 `config.py` 中配置：
-
-```python
-ATTACHMENTS = [
-    'attachments/resume.pdf',
-    'attachments/transcript.pdf'
+```json
+[
+  { "email": "teacher1@university.edu.cn", "name": "张教授" },
+  { "email": "teacher2@university.edu.cn", "name": "李教授" }
 ]
 ```
 
-### 5. 测试配置
+## 发布与 CI/CD
 
-```bash
-python test_config.py
+- `push main`：执行 QA 与三平台构建验证（不发布 Release）
+- `push v* tag`：执行 QA，自动发布三平台正式安装包
+
+工作流文件：`.github/workflows/desktop-release.yml`
+
+## 项目结构
+
+```text
+apps/desktop/                 # Tauri + React 桌面应用
+bulk_email_sender/            # Python 核心发送引擎
+scripts/                      # QA / runtime 辅助脚本
+tests/                        # Python 单元与集成测试
+config.py                     # 传统 CLI 配置入口
+main.py                       # 传统 CLI 主程序
+worker.py                     # Desktop 调用的 Python Worker 入口
 ```
 
-### 6. 开始发送
+## 合规与安全
 
-```bash
-python main.py
-```
+- 仅用于合法、合规的邮件沟通场景
+- 请使用邮箱授权码，不要使用网页登录密码
+- 发送前请确认目标人群与频率策略，避免骚扰与滥发
 
-## 🚢 自动构建与发布（GitHub Actions）
+## License
 
-仓库已内置工作流：`.github/workflows/desktop-release.yml`。
-
-- `push main`：自动执行 `ruff + pytest`，并并行构建 Windows / Linux / macOS 安装包，发布为 `Prerelease`
-- `push v* tag`（例如 `v0.1.0`）：自动构建三平台安装包并发布为正式 `Release`
-
-首次发布建议流程：
-
-```bash
-git push origin main
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-如需发布权限，请确保仓库 `Actions` 对 `GITHUB_TOKEN` 具备 `contents: write`。
-
-## 📖 详细配置说明
-
-### 邮箱配置
-
-#### 获取 SMTP 授权码（通用）
-
-1. 登录邮箱网页版
-2. 进入“设置 / 安全 / POP3/SMTP/IMAP”等页面
-3. 开启 SMTP 服务
-4. 生成授权码或应用专用密码（作为 `SENDER_PASSWORD`）
-
-⚠️ **重要**：`SENDER_PASSWORD` 通常是授权码，不是网页登录密码！
-
-#### 常见邮箱 SMTP 参考
-
-| 邮箱服务商 | SMTP Host | 端口 | 加密方式 |
-|---|---|---:|---|
-| QQ 邮箱 | `smtp.qq.com` | `465/587` | SSL/STARTTLS |
-| 163 邮箱 | `smtp.163.com` | `465/587` | SSL/STARTTLS |
-| 126 邮箱 | `smtp.126.com` | `465/587` | SSL/STARTTLS |
-| Outlook / Hotmail | `smtp.office365.com` | `587` | STARTTLS |
-| Gmail | `smtp.gmail.com` | `465/587` | SSL/STARTTLS |
-| 教育邮箱 | 学校提供 | 学校提供 | 依学校配置 |
-
-> 不同学校和企业邮箱策略差异较大，若失败请优先以邮箱官方文档为准。
-
-### 导师数据格式
-
-`data/teachers.json` 文件格式：
-
-```json
-{
-    "邮箱地址": "导师姓名",
-    "teacher@university.edu.cn": "张教授"
-}
-```
-
-### 邮件模板
-
-邮件正文中可以使用 `{teacher_name}` 占位符，程序会自动替换为对应导师的姓名。
-
-### 发送控制
-
-```python
-MIN_DELAY = 30  # 最小发送间隔（秒）
-MAX_DELAY = 60  # 最大发送间隔（秒）
-RANDOMIZE_ORDER = False  # 是否随机打乱发送顺序
-ADD_TEACHER_SUFFIX = True  # 是否在姓名后添加"老师"
-```
-
-## 🛠️ 高级功能
-
-### 发送记录管理
-
-- 程序会自动在 `email_log.txt` 中记录发送日志
-- 已发送的邮箱会被记录，重新运行时会自动跳过
-- 支持查看发送统计和失败邮箱列表
-
-## ⚠️ 重要注意事项
-
-### 使用须知
-
-1. **合规使用**：请确保您的邮件发送行为符合相关法律法规
-2. **频率控制**：建议设置合理的发送间隔，避免被邮件服务商限制
-3. **内容质量**：发送高质量、个性化的邮件内容，避免被识别为垃圾邮件
-4. **隐私保护**：妥善保管邮箱授权码等敏感信息
-
-### 技术限制
-
-1. **发送限制**：126邮箱每日发送量有限制，请合理安排
-2. **附件大小**：单个附件建议不超过10MB
-3. **网络环境**：需要稳定的网络连接
-
-### 风险提示
-
-1. **账号安全**：频繁发送可能导致邮箱被临时限制
-2. **垃圾邮件**：不当使用可能导致邮件进入垃圾箱
-3. **法律风险**：请确保邮件内容和发送行为的合法性
-
-## 🔧 故障排除
-
-### 常见问题
-
-1. **认证失败**
-   - 检查邮箱地址和授权码是否正确
-   - 确认已开启SMTP服务
-
-2. **发送失败**
-   - 检查网络连接
-   - 确认附件文件存在且大小合适
-   - 检查邮件内容格式
-
-3. **被识别为垃圾邮件**
-   - 增加发送间隔时间
-   - 优化邮件内容质量
-   - 避免使用敏感词汇
-
-## 📄 许可证
-
-本项目采用 MIT 许可证，详见 [LICENSE](LICENSE) 文件。
-
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-## ⚠️ 免责声明
-
-本工具仅供学习和合法用途使用。使用者应当：
-
-1. 遵守相关法律法规和邮件服务商的使用条款
-2. 确保邮件内容的真实性和合法性
-3. 尊重收件人的意愿，避免发送垃圾邮件
-4. 承担因使用本工具而产生的一切责任
-
-开发者不对使用本工具造成的任何后果承担责任。
+MIT

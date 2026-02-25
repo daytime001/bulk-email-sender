@@ -38,7 +38,7 @@ jobs:
         run: uv run pytest -q
 
   build-and-release:
-    name: Build & Release (${{ matrix.platform }})
+    name: Desktop Build (${{ matrix.platform }})
     needs: qa
     permissions:
       contents: write
@@ -47,11 +47,11 @@ jobs:
       matrix:
         include:
           - platform: ubuntu-22.04
-            args: ""
+            bundle: appimage
           - platform: windows-latest
-            args: ""
+            bundle: msi
           - platform: macos-latest
-            args: ""
+            bundle: dmg
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -83,34 +83,35 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci --prefix apps/desktop
 
-      - name: Resolve release metadata
-        id: release_meta
-        shell: bash
-        run: |
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "name=Bulk Email Sender ${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            short_sha="${GITHUB_SHA::7}"
-            tag="build-${GITHUB_RUN_NUMBER}-${short_sha}"
-            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-            echo "name=Bulk Email Sender Build ${GITHUB_RUN_NUMBER} (${short_sha})" >> "$GITHUB_OUTPUT"
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          fi
+      - name: Build package (CI only)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npm --prefix apps/desktop run tauri build -- --bundles ${{ matrix.bundle }}
 
-      - name: Build and upload release assets
+      - name: Build and publish release assets
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: apps/desktop
-          args: ${{ matrix.args }}
-          tagName: ${{ steps.release_meta.outputs.tag }}
-          releaseName: ${{ steps.release_meta.outputs.name }}
+          args: --bundles ${{ matrix.bundle }}
+          tagName: ${{ github.ref_name }}
+          releaseName: Bulk Email Sender ${{ github.ref_name }}
           releaseBody: |
-            Automated build from `${{ github.sha }}`.
-            - Push `main`: prerelease
-            - Push `v*` tag: stable release
+            ## Highlights
+            - Desktop installer release for Windows, macOS, and Linux.
+            - Installer assets are intentionally minimal and production-oriented.
+
+            ## Install
+            - Windows: download `*_windows_*.msi`
+            - macOS: download `*_darwin_*.dmg`
+            - Linux: download `*_linux_*.AppImage`
+
+            ## Notes
+            - This release only keeps core installers to avoid redundant package formats.
+            - Detailed code changes are listed in the auto-generated changelog below.
+          generateReleaseNotes: true
           releaseDraft: false
-          prerelease: ${{ steps.release_meta.outputs.prerelease }}
+          prerelease: false
+          uploadPlainBinary: false
+          assetNamePattern: bulk-email-sender_v[version]_[platform]_[arch][ext]
