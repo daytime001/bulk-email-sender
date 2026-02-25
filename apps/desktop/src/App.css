@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
+
+:root {
+  font-family: 'Noto Sans SC', 'Manrope', sans-serif;
+  color: #19253a;
+  background: #e9f2ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(18, 124, 255, 0.18), transparent 32%),
+    radial-gradient(circle at 75% 0%, rgba(0, 214, 166, 0.14), transparent 28%),
+    linear-gradient(160deg, #ebf3ff, #dfe9ff 55%, #e8f8ff);
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.page-shell {
+  position: relative;
+  min-height: 100vh;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+}
+
+.page-glow {
+  position: absolute;
+  width: min(720px, 90vw);
+  height: 380px;
+  background: linear-gradient(120deg, rgba(21, 118, 255, 0.3), rgba(0, 197, 140, 0.22));
+  filter: blur(56px);
+  border-radius: 60px;
+  top: -88px;
+}
+
+.main-card {
+  width: 100%;
+  border-radius: 0;
+  position: relative;
+  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: none;
+}
+
+.header-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ant-tabs-nav {
+  margin-bottom: 20px !important;
+}
+
+.ant-btn-primary {
+  background: linear-gradient(100deg, #1473ff, #2e9dff);
+  border: none;
+  min-width: 180px;
+}
+
+.ant-btn-primary:hover {
+  background: linear-gradient(100deg, #1062d9, #1984e6);
+}
+
+@media (max-width: 768px) {
+  .main-card {
+    border-radius: 0;
+  }
+}

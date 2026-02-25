@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Bulk Email Sender",
+  "version": "0.1.0",
+  "identifier": "com.bulk.email.sender",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5174",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "批量邮件发送客户端",
+        "width": 1260,
+        "height": 860,
+        "resizable": true,
+        "fullscreen": false,
+        "acceptFirstMouse": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "resources": [
+      "../../../worker.py",
+      "../../../bulk_email_sender"
+    ]
+  }
+}

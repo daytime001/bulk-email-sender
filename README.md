@@ -26,8 +26,8 @@
 
 ## 📋 系统要求
 
-- Python 3.6+
-- 126邮箱账号（需开启SMTP服务）
+- Python 3.9+
+- 任意支持 SMTP 的邮箱账号（建议开启授权码或应用专用密码）
 
 ## 🚀 快速开始
 
@@ -43,9 +43,9 @@ cd bulk-email-sender
 编辑 `config.py` 文件：
 
 ```python
-# 邮箱配置
-SENDER_EMAIL = 'your_email@126.com'  # 您的126邮箱
-SENDER_PASSWORD = 'your_authorization_code'  # 126邮箱授权码
+# 邮箱配置（以任意 SMTP 邮箱为例）
+SENDER_EMAIL = 'your_email@example.com'  # 发件邮箱
+SENDER_PASSWORD = 'your_authorization_code'  # SMTP 授权码/应用专用密码
 SENDER_NAME = '您的姓名'  # 发件人姓名
 
 # 邮件内容
@@ -93,18 +93,48 @@ python test_config.py
 python main.py
 ```
 
+## 🚢 自动构建与发布（GitHub Actions）
+
+仓库已内置工作流：`.github/workflows/desktop-release.yml`。
+
+- `push main`：自动执行 `ruff + pytest`，并并行构建 Windows / Linux / macOS 安装包，发布为 `Prerelease`
+- `push v* tag`（例如 `v0.1.0`）：自动构建三平台安装包并发布为正式 `Release`
+
+首次发布建议流程：
+
+```bash
+git push origin main
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+如需发布权限，请确保仓库 `Actions` 对 `GITHUB_TOKEN` 具备 `contents: write`。
+
 ## 📖 详细配置说明
 
 ### 邮箱配置
 
-#### 获取126邮箱授权码
+#### 获取 SMTP 授权码（通用）
 
-1. 登录126邮箱网页版
-2. 进入"设置" → "POP3/SMTP/IMAP"
-3. 开启"SMTP服务"
-4. 设置授权码（这个授权码就是 `SENDER_PASSWORD`）
+1. 登录邮箱网页版
+2. 进入“设置 / 安全 / POP3/SMTP/IMAP”等页面
+3. 开启 SMTP 服务
+4. 生成授权码或应用专用密码（作为 `SENDER_PASSWORD`）
 
-⚠️ **重要**：`SENDER_PASSWORD` 是授权码，不是邮箱登录密码！
+⚠️ **重要**：`SENDER_PASSWORD` 通常是授权码，不是网页登录密码！
+
+#### 常见邮箱 SMTP 参考
+
+| 邮箱服务商 | SMTP Host | 端口 | 加密方式 |
+|---|---|---:|---|
+| QQ 邮箱 | `smtp.qq.com` | `465/587` | SSL/STARTTLS |
+| 163 邮箱 | `smtp.163.com` | `465/587` | SSL/STARTTLS |
+| 126 邮箱 | `smtp.126.com` | `465/587` | SSL/STARTTLS |
+| Outlook / Hotmail | `smtp.office365.com` | `587` | STARTTLS |
+| Gmail | `smtp.gmail.com` | `465/587` | SSL/STARTTLS |
+| 教育邮箱 | 学校提供 | 学校提供 | 依学校配置 |
+
+> 不同学校和企业邮箱策略差异较大，若失败请优先以邮箱官方文档为准。
 
 ### 导师数据格式
 

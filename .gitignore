@@ -1,0 +1,12 @@
+private_docs/
+__pycache__/
+.pytest_cache/
+.venv/
+.ruff_cache/
+dist/
+email_log.txt
+sent_records.jsonl
+apps/desktop/node_modules/
+apps/desktop/src-tauri/target/
+scripts/qa/.real_email.env
+data/test.json

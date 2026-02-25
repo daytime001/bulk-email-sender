@@ -1,32 +1,34 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 邮件发送器模块
 负责邮件的创建和发送
 """
 
+import contextlib
+import logging
 import os
-import time
 import random
 import smtplib
-import logging
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
+import time
 from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from email.utils import formatdate
-from config import *
+from urllib.parse import quote
+
+import config
+
 
 class EmailSender:
     """邮件发送器类"""
-    
+
     def __init__(self):
         self.success_count = 0
         self.fail_count = 0
         self.failed_emails = []
         self.sent_emails = set()  # 记录已发送的邮箱
         self.logger = logging.getLogger(__name__)
-
 
         # 配置日志
         self._setup_logging()
@@ -37,7 +39,7 @@ class EmailSender:
     def _setup_logging(self):
         """设置日志配置"""
         # 创建文件处理器，强制刷新缓冲区
-        file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
+        file_handler = logging.FileHandler(config.LOG_FILE, encoding="utf-8")
         file_handler.setLevel(logging.INFO)
 
         # 创建控制台处理器
@@ -45,7 +47,7 @@ class EmailSender:
         console_handler.setLevel(logging.INFO)
 
         # 设置格式
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
 
@@ -53,35 +55,35 @@ class EmailSender:
         logging.basicConfig(
             level=logging.INFO,
             handlers=[file_handler, console_handler],
-            force=True  # 强制重新配置
+            force=True,  # 强制重新配置
         )
 
         # 确保日志立即刷新
         for handler in logging.getLogger().handlers:
-            if hasattr(handler, 'flush'):
+            if hasattr(handler, "flush"):
                 handler.flush()
 
     def flush_logs(self):
         """强制刷新所有日志处理器"""
         for handler in logging.getLogger().handlers:
-            if hasattr(handler, 'flush'):
+            if hasattr(handler, "flush"):
                 handler.flush()
 
     def _load_sent_records(self):
         """从日志文件中加载已发送的邮箱记录"""
-        if not os.path.exists(LOG_FILE):
+        if not os.path.exists(config.LOG_FILE):
             return
 
         try:
-            with open(LOG_FILE, 'r', encoding='utf-8') as f:
+            with open(config.LOG_FILE, encoding="utf-8") as f:
                 for line in f:
                     # 查找包含发送成功和邮箱地址的日志行
-                    if '✅ 发送成功给' in line and '@' in line:
+                    if "✅ 发送成功给" in line and "@" in line:
                         # 提取邮箱地址
-                        parts = line.split('✅ 发送成功给 ')
+                        parts = line.split("✅ 发送成功给 ")
                         if len(parts) > 1:
-                            email_part = parts[1].split('(')[1].split(')')[0]
-                            if '@' in email_part:
+                            email_part = parts[1].split("(")[1].split(")")[0]
+                            if "@" in email_part:
                                 self.sent_emails.add(email_part)
 
             if self.sent_emails:
@@ -109,7 +111,7 @@ class EmailSender:
             summary += f"{i:3d}. {email}\n"
 
         return summary
-    
+
     def create_email_content(self, teacher_name):
         """
         创建邮件正文内容
@@ -121,7 +123,7 @@ class EmailSender:
             str: 邮件正文（HTML格式）
         """
         # 获取原始文本内容
-        text_content = EMAIL_CONTENT.format(teacher_name=teacher_name)
+        text_content = config.EMAIL_CONTENT.format(teacher_name=teacher_name)
 
         # 转换为HTML格式
         html_content = self.convert_text_to_html(text_content)
@@ -139,28 +141,30 @@ class EmailSender:
             str: HTML格式内容
         """
         # 分割段落
-        paragraphs = text_content.split('\n')
+        paragraphs = text_content.split("\n")
         html_paragraphs = []
 
         signature_started = False
 
         for paragraph in paragraphs:
             # 先检查是否以全角空格开头（首行缩进标识），再进行strip
-            has_indent = paragraph.startswith('　　')
+            has_indent = paragraph.startswith("　　")
             paragraph_stripped = paragraph.strip()
 
             if not paragraph_stripped:
                 # 空行跳过，不添加额外间距
                 continue
-            elif paragraph_stripped.startswith('尊敬的') and paragraph_stripped.endswith('：'):
+            elif paragraph_stripped.startswith("尊敬的") and paragraph_stripped.endswith("："):
                 # 称呼部分
                 html_paragraphs.append(f'<p style="margin: 0 0 16px 0; line-height: 1.5;">{paragraph_stripped}</p>')
             elif has_indent:
                 # 正文段落，使用正常的段落间距和首行缩进
                 # 移除开头的两个全角空格，用CSS text-indent实现缩进
-                content = paragraph.lstrip('　').strip()
-                html_paragraphs.append(f'<p style="margin: 0 0 16px 0; line-height: 1.8; text-indent: 2em;">{content}</p>')
-            elif '学生魏中信' in paragraph_stripped or '2025年' in paragraph_stripped or signature_started:
+                content = paragraph.lstrip("　").strip()
+                html_paragraphs.append(
+                    f'<p style="margin: 0 0 16px 0; line-height: 1.8; text-indent: 2em;">{content}</p>'
+                )
+            elif "学生魏中信" in paragraph_stripped or "2025年" in paragraph_stripped or signature_started:
                 # 签名部分开始
                 if not signature_started:
                     signature_started = True
@@ -175,10 +179,10 @@ class EmailSender:
 
         # 如果有签名部分，关闭div
         if signature_started:
-            html_paragraphs.append('</div>')
+            html_paragraphs.append("</div>")
 
         # 组合HTML内容
-        html_body = f'''
+        html_body = f"""
         <html>
         <head>
             <meta charset="UTF-8">
@@ -195,10 +199,10 @@ class EmailSender:
             </style>
         </head>
         <body>
-            {''.join(html_paragraphs)}
+            {"".join(html_paragraphs)}
         </body>
         </html>
-        '''
+        """
 
         return html_body
 
@@ -211,15 +215,15 @@ class EmailSender:
             teacher_email (str): 收件人邮箱
         """
         # 使用最简单的格式设置邮件头
-        msg['From'] = SENDER_EMAIL
-        msg['To'] = teacher_email
-        msg['Subject'] = EMAIL_SUBJECT
+        msg["From"] = config.SENDER_EMAIL
+        msg["To"] = teacher_email
+        msg["Subject"] = config.EMAIL_SUBJECT
 
         # 添加一些标准邮件头，提高送达率
-        msg['Message-ID'] = f"<{int(time.time() * 1000000)}@{SENDER_EMAIL.split('@')[1]}>"
-        msg['Date'] = formatdate(localtime=True)
-        msg['MIME-Version'] = '1.0'
-    
+        msg["Message-ID"] = f"<{int(time.time() * 1000000)}@{config.SENDER_EMAIL.split('@')[1]}>"
+        msg["Date"] = formatdate(localtime=True)
+        msg["MIME-Version"] = "1.0"
+
     def add_attachments(self, msg):
         """
         添加附件到邮件
@@ -229,34 +233,27 @@ class EmailSender:
         """
         import mimetypes
 
-        for attachment_path in ATTACHMENTS:
+        for attachment_path in config.ATTACHMENTS:
             if os.path.exists(attachment_path):
                 try:
                     # 获取文件的MIME类型
                     mime_type, _ = mimetypes.guess_type(attachment_path)
                     if mime_type is None:
-                        mime_type = 'application/octet-stream'
+                        mime_type = "application/octet-stream"
 
-                    main_type, sub_type = mime_type.split('/', 1)
+                    main_type, sub_type = mime_type.split("/", 1)
 
-                    with open(attachment_path, 'rb') as attachment:
+                    with open(attachment_path, "rb") as attachment:
                         part = MIMEBase(main_type, sub_type)
                         part.set_payload(attachment.read())
                         encoders.encode_base64(part)
 
                         # 正确设置文件名，避免中文乱码
                         filename = os.path.basename(attachment_path)
-                        # 使用RFC2231编码处理中文文件名
-                        from email.header import Header
-                        from urllib.parse import quote
-
                         # 对文件名进行URL编码
-                        encoded_filename = quote(filename.encode('utf-8'))
+                        encoded_filename = quote(filename.encode("utf-8"))
 
-                        part.add_header(
-                            'Content-Disposition',
-                            f'attachment; filename*=UTF-8\'\'{encoded_filename}'
-                        )
+                        part.add_header("Content-Disposition", f"attachment; filename*=UTF-8''{encoded_filename}")
                         msg.attach(part)
                     # 静默记录附件添加信息到日志
                     self.logger.debug(f"已添加附件: {attachment_path} (类型: {mime_type})")
@@ -265,7 +262,7 @@ class EmailSender:
             else:
                 self.logger.warning(f"附件文件不存在: {attachment_path}")
                 print(f"⚠️  警告: 附件文件不存在: {attachment_path}")
-    
+
     def send_single_email(self, teacher_email, teacher_name, retry_count=3):
         """
         发送单封邮件，支持重试机制
@@ -292,7 +289,7 @@ class EmailSender:
 
                 # 添加邮件正文（HTML格式）
                 html_body = self.create_email_content(teacher_name)
-                msg.attach(MIMEText(html_body, 'html', 'utf-8'))
+                msg.attach(MIMEText(html_body, "html", "utf-8"))
 
                 # 添加附件
                 self.add_attachments(msg)
@@ -300,15 +297,15 @@ class EmailSender:
                 # 连接SMTP服务器并发送邮件，设置超时和强制关闭
                 server = None
                 try:
-                    server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=30)
-                    server.login(SENDER_EMAIL, SENDER_PASSWORD)
+                    server = smtplib.SMTP_SSL(config.SMTP_SERVER, config.SMTP_PORT, timeout=30)
+                    server.login(config.SENDER_EMAIL, config.SENDER_PASSWORD)
                     # 使用send_message方法，让服务器自动处理邮件头
                     result = server.send_message(msg)
                     # send_message返回的是被拒绝的收件人字典，空字典表示全部成功
                     if result:
                         # 如果有被拒绝的收件人，记录但不抛出异常
                         self.logger.warning(f"部分收件人被拒绝: {result}")
-                        print(f"⚠️  部分收件人被拒绝")
+                        print("⚠️  部分收件人被拒绝")
                     else:
                         # 全部成功
                         pass
@@ -317,11 +314,9 @@ class EmailSender:
                     if server:
                         try:
                             server.quit()
-                        except:
-                            try:
+                        except Exception:
+                            with contextlib.suppress(Exception):
                                 server.close()
-                            except:
-                                pass
 
                 # 记录发送成功，包含具体老师信息
                 self.logger.info(f"✅ 发送成功给 {teacher_name}({teacher_email})")
@@ -332,7 +327,7 @@ class EmailSender:
 
             except smtplib.SMTPAuthenticationError as e:
                 error_msg = f"SMTP认证失败: {e}"
-                self.logger.error(f"❌ 发送失败: 请检查邮箱和授权码")
+                self.logger.error("❌ 发送失败: 请检查邮箱和授权码")
                 self.flush_logs()  # 强制刷新日志
                 # 认证失败不重试
                 self.fail_count += 1
@@ -341,7 +336,7 @@ class EmailSender:
 
             except smtplib.SMTPRecipientsRefused as e:
                 error_msg = f"收件人被拒绝: {e}"
-                self.logger.error(f"❌ 发送失败: 收件人邮箱无效")
+                self.logger.error("❌ 发送失败: 收件人邮箱无效")
                 # 收件人问题不重试
                 self.fail_count += 1
                 self.failed_emails.append((teacher_email, teacher_name, error_msg))
@@ -362,7 +357,7 @@ class EmailSender:
 
             except smtplib.SMTPDataError as e:
                 error_msg = f"邮件数据错误: {e}"
-                self.logger.error(f"❌ 发送失败: 邮件格式问题")
+                self.logger.error("❌ 发送失败: 邮件格式问题")
                 # 数据格式问题不重试
                 self.fail_count += 1
                 self.failed_emails.append((teacher_email, teacher_name, error_msg))
@@ -394,7 +389,7 @@ class EmailSender:
         self.fail_count += 1
         self.failed_emails.append((teacher_email, teacher_name, "重试次数已用完"))
         return False
-    
+
     def batch_send(self, teacher_data):
         """
         批量发送邮件
@@ -403,25 +398,25 @@ class EmailSender:
             teacher_data (dict): 导师数据 {email: name}
         """
         print("\n🚀 开始发送邮件...")
-        print("="*50)
-        
+        print("=" * 50)
+
         # 转换为列表格式
         teacher_list = list(teacher_data.items())
-        
+
         # 随机打乱发送顺序
-        if RANDOMIZE_ORDER:
+        if config.RANDOMIZE_ORDER:
             random.shuffle(teacher_list)
             # 静默记录到日志，不在控制台显示
             self.logger.debug("已随机打乱发送顺序")
-        
+
         total_count = len(teacher_list)
-        
+
         # 统计跳过的邮件数量
         skipped_count = 0
 
         for i, (email, name) in enumerate(teacher_list, 1):
             # 处理导师姓名
-            teacher_name = name + "老师" if ADD_TEACHER_SUFFIX else name
+            teacher_name = name + "老师" if config.ADD_TEACHER_SUFFIX else name
 
             # 检查是否已经发送过
             if self.is_already_sent(email):
@@ -435,14 +430,14 @@ class EmailSender:
             try:
                 success = self.send_single_email(email, teacher_name)
                 if not success:
-                    print(f"❌ 发送失败，继续下一封邮件")
+                    print("❌ 发送失败，继续下一封邮件")
             except Exception as e:
                 print(f"❌ 发送过程中出现异常: {e}")
                 self.logger.error(f"发送异常: {e}")
 
             # 如果不是最后一封邮件，则等待随机时间（分段等待，避免长时间挂起）
             if i < total_count:
-                delay = random.randint(MIN_DELAY, MAX_DELAY)
+                delay = random.randint(config.MIN_DELAY, config.MAX_DELAY)
                 print(f"⏳ 等待 {delay} 秒后发送下一封...")
 
                 # 分段等待，每5秒检查一次，避免长时间挂起
@@ -453,17 +448,17 @@ class EmailSender:
                     remaining_time -= sleep_time
                     if remaining_time > 0:
                         print(f"⏳ 还需等待 {remaining_time} 秒...")
-        
+
         # 输出发送统计
         self.print_summary(skipped_count)
-    
+
     def print_summary(self, skipped_count=0):
         """打印发送统计信息"""
         total_count = self.success_count + self.fail_count
 
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("📊 发送完成统计")
-        print("="*50)
+        print("=" * 50)
         print(f"✅ 成功发送: {self.success_count} 封")
         print(f"❌ 发送失败: {self.fail_count} 封")
         if skipped_count > 0:
@@ -474,28 +469,35 @@ class EmailSender:
         if total_count > 0:
             success_rate = self.success_count / total_count * 100
             print(f"📈 本次成功率: {success_rate:.1f}%")
-        
+
         if self.failed_emails:
-            print(f"\n❌ 发送失败的邮件:")
+            print("\n❌ 发送失败的邮件:")
             for email, name, error in self.failed_emails:
                 print(f"  - {name} ({email}): {error}")
-        
-        print("="*50)
-        print(f"📝 详细日志已保存到 {LOG_FILE}")
-        
+
+        print("=" * 50)
+        print(f"📝 详细日志已保存到 {config.LOG_FILE}")
+
         # 记录统计信息到日志
-        self.logger.info(f"发送统计 - 成功: {self.success_count}, 失败: {self.fail_count}, 跳过: {skipped_count}, 本次处理: {total_count}, 总已发送: {len(self.sent_emails)}")
-    
+        self.logger.info(
+            "发送统计 - 成功: %s, 失败: %s, 跳过: %s, 本次处理: %s, 总已发送: %s",
+            self.success_count,
+            self.fail_count,
+            skipped_count,
+            total_count,
+            len(self.sent_emails),
+        )
+
     def test_connection(self):
         """
         测试SMTP连接
-        
+
         Returns:
             bool: 连接是否成功
         """
         try:
-            with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
-                server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            with smtplib.SMTP_SSL(config.SMTP_SERVER, config.SMTP_PORT) as server:
+                server.login(config.SENDER_EMAIL, config.SENDER_PASSWORD)
             print("✅ SMTP连接测试成功")
             return True
         except Exception as e:

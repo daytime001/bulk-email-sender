@@ -1,5 +1,10 @@
-{
-    "teacher1@example.com": "张教授",
-    "teacher2@example.com": "李教授",
-    "teacher3@example.com": "王教授"
-}
+[
+  {
+    "name": "张教授",
+    "email": "zhang@example.test"
+  },
+  {
+    "name": "测试人",
+    "email": "test@example.test"
+  }
+]

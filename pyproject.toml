@@ -1,0 +1,29 @@
+[project]
+name = "bulk-email-sender"
+version = "0.1.0"
+description = "Desktop-ready bulk email sender engine with JSON/XLSX recipient support"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "openpyxl>=3.1.5,<4",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0,<9",
+  "ruff>=0.15.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["bulk_email_sender"]

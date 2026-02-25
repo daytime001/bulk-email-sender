@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 邮件发送配置文件
 请在此处修改所有配置参数
@@ -7,17 +6,17 @@
 
 # ==================== 邮箱配置 ====================
 # 126邮箱配置
-SENDER_EMAIL = 'your_email@126.com'  # 您的126邮箱地址
-SENDER_PASSWORD = 'your_authorization_code'  # 您的126邮箱授权码（不是登录密码！）
-SENDER_NAME = '您的姓名'  # 发件人姓名
+SENDER_EMAIL = "your_email@126.com"  # 您的126邮箱地址
+SENDER_PASSWORD = "your_authorization_code"  # 您的126邮箱授权码（不是登录密码！）
+SENDER_NAME = "您的姓名"  # 发件人姓名
 
 # SMTP服务器配置
-SMTP_SERVER = 'smtp.126.com'
+SMTP_SERVER = "smtp.126.com"
 SMTP_PORT = 465
 
 # ==================== 邮件内容配置 ====================
 # 邮件主题
-EMAIL_SUBJECT = '推免自荐+学校名称+您的姓名'
+EMAIL_SUBJECT = "推免自荐+学校名称+您的姓名"
 
 # 邮件正文模板（{teacher_name}会被替换为导师姓名）
 EMAIL_CONTENT = """尊敬的{teacher_name}：
@@ -33,14 +32,14 @@ EMAIL_CONTENT = """尊敬的{teacher_name}：
 """
 
 # ==================== 文件路径配置 ====================
-# 导师数据文件路径
-TEACHER_DATA_FILE = 'data/teachers.json'
+# 收件人数据文件路径（支持 .json / .xlsx）
+TEACHER_DATA_FILE = "data/teachers.json"
 
 # 附件文件路径列表（可为空）
 ATTACHMENTS = []  # 例如: ['attachments/resume.pdf', 'attachments/transcript.pdf']
 
 # 日志文件路径
-LOG_FILE = 'email_log.txt'
+LOG_FILE = "email_log.txt"
 
 # ==================== 发送控制配置 ====================
 # 发送间隔时间（秒）
