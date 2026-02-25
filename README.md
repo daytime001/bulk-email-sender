@@ -1,62 +1,133 @@
-# Bulk Email Sender
+# 批量邮件发送工具
 
-面向研究申请场景的批量邮件发送工具，提供两种形态：
-- `Desktop`：Tauri + React 图形客户端（推荐给非开发用户）
-- `Core Engine`：Python 发送引擎（支持脚本化与自动化）
+一个专为研究生导师申请场景设计的批量邮件发送工具，帮助你更高效地向多位导师发送自荐邮件。
 
-## 功能概览
+本工具的关键点是“批量 + 个性化”：支持在邮件中自动替换导师姓名（例如 `{teacher_name}`），避免使用千篇一律的通用称呼。
 
-- 批量发送个性化邮件（支持 `{teacher_name}` 占位符）
-- 收件人文件校验（JSON / XLSX）
-- SMTP 连接测试与发送前校验
-- 已发送记录去重（避免重复触达）
-- 运行时自检与基础打包工具链
+## ⚠️ 重要说明（导师数据需自行获取）
 
-## 快速安装（Desktop）
+**本工具专注于批量发送邮件，暂不包含爬虫功能。导师邮箱信息需要用户自行从学校/学院官网等渠道整理。**
 
-请在 [Releases](https://github.com/daytime001/bulk-email-sender/releases) 下载对应系统安装包。
+为什么不内置爬虫：
+- 不同学校官网结构差异很大，通用爬虫很难可靠覆盖
+- 你可以按目标学校页面结构自行编写爬虫脚本，或使用八爪鱼等可视化工具.推荐[Python爬虫入门教程](https://mp.weixin.qq.com/s/1mp60tfnLcVMFH7w6S6rQg)
 
-| 平台 | 推荐安装包 | 说明 |
-|---|---|---|
-| Windows | `bulk-email-sender_v*_windows_*.msi` | 标准安装器 |
-| macOS | `bulk-email-sender_v*_darwin_*.dmg` | 磁盘镜像安装 |
-| Linux | `bulk-email-sender_v*_linux_*.AppImage` | 单文件可执行包 |
+## ✨ 主要功能
 
-> 发布资产已做精简：仅保留每个平台 1 种主安装格式，避免同平台多包型干扰。
+- 🚀 **批量发送**：一次性向多位导师发送邮件
+- 🎯 **个性化称呼**：支持 `{teacher_name}` 自动替换为导师姓名
+- 📎 **附件支持**：支持附带简历、成绩单等文件
+- 📝 **模板定制**：自定义邮件主题与正文模板
+- 📊 **发送记录**：记录已发送邮箱，重复运行时自动跳过（避免重复打扰）
+- ⏱️ **发送节奏**：随机发送间隔，降低触发风控的概率
 
-## 使用流程（Desktop）
+## 📋 系统要求
 
-1. 配置 SMTP（邮箱、授权码、主机、端口）
-2. 导入收件人文件（`data/teachers.json` 或 `.xlsx`）
-3. 填写主题与正文模板
-4. 发送前执行 SMTP 测试
-5. 启动批量发送并查看进度与失败项
+- Python 3.9+
+- 任意支持 SMTP 的邮箱账号（需开启授权码或应用专用密码）
 
-## 使用流程（Python Engine）
+## 🚀 快速开始（两种使用方式）
 
-### 环境准备
+### 方式 A：桌面客户端（推荐）
+
+在 [Releases](https://github.com/daytime001/bulk-email-sender/releases) 下载并安装对应系统安装包：
+
+| 平台    | 安装包（示例）                          |
+| ------- | --------------------------------------- |
+| Windows | `bulk-email-sender_v*_windows_*.msi`    |
+| macOS   | `bulk-email-sender_v*_darwin_*.dmg`     |
+| Linux   | `bulk-email-sender_v*_linux_*.AppImage` |
+
+桌面客户端使用流程：
+1. 填写 SMTP 配置并先做“连接测试”
+2. 导入导师数据文件（`.json` / `.xlsx`）
+3. 填写主题与正文模板（包含 `{teacher_name}`）
+4. 开始发送并查看进度与失败列表
+
+![demo](image.png)
+
+### 方式 B：直接运行 Python 脚本
+
+1. 下载代码
 
 ```bash
-uv sync --group dev
+git clone https://github.com/daytime001/bulk-email-sender.git
+cd bulk-email-sender
 ```
 
-### 运行测试
+2. 配置邮箱信息（编辑 `config.py`）
+
+```python
+SENDER_EMAIL = "your_email@example.com"
+SENDER_PASSWORD = "your_authorization_code"  # SMTP 授权码/应用专用密码
+SENDER_NAME = "您的姓名"
+
+SMTP_SERVER = "smtp.163.com"
+SMTP_PORT = 465
+```
+
+3. 准备导师数据（编辑 `data/teachers.json` 或使用 `.xlsx`）
+
+4. （可选）添加附件（放入 `attachments/` 并在 `config.py` 配置）
+
+5. 测试配置
 
 ```bash
-uv run ruff check .
-uv run pytest -q
+python test_config.py
 ```
 
-### 入口脚本
+6. 开始发送
 
 ```bash
-uv run python main.py
-uv run python test_config.py
+python main.py
 ```
 
-## 收件人数据格式
+## 📖 详细配置说明
 
-### JSON（对象）
+### 1) 邮箱与 SMTP 配置
+
+#### 获取 SMTP 授权码（通用）
+
+1. 登录邮箱网页版
+2. 进入“设置 / 安全 / POP3/SMTP/IMAP”等页面
+3. 开启 SMTP 服务
+4. 生成授权码或应用专用密码（填入 `SENDER_PASSWORD`）
+
+⚠️ **重要**：`SENDER_PASSWORD` 通常是授权码，不是邮箱登录密码。
+
+#### 常见邮箱 SMTP 参考
+
+| 邮箱服务商        | SMTP Host            |      端口 | 加密方式       |
+| ----------------- | -------------------- | --------: | -------------- |
+| QQ 邮箱           | `smtp.qq.com`        | `465/587` | SSL / STARTTLS |
+| 163 邮箱          | `smtp.163.com`       | `465/587` | SSL / STARTTLS |
+| 126 邮箱          | `smtp.126.com`       | `465/587` | SSL / STARTTLS |
+| Outlook / Hotmail | `smtp.office365.com` |     `587` | STARTTLS       |
+| Gmail             | `smtp.gmail.com`     | `465/587` | SSL / STARTTLS |
+| 教育邮箱          | 学校提供             |  学校提供 | 依学校配置     |
+
+> 不同学校/企业邮箱策略差异较大，若失败请以邮箱官方文档为准。
+
+### 2) 邮件主题与正文模板
+
+- 主题：`EMAIL_SUBJECT`
+- 正文：`EMAIL_CONTENT`
+- 模板变量：
+  - `{teacher_name}`：导师姓名（核心变量，用于个性化称呼）
+
+示例（节选）：
+
+```text
+尊敬的{teacher_name}：
+
+您好！我是……（此处填写自我介绍）
+```
+
+### 3) 导师数据格式（需自行整理/爬取）
+
+你需要自行从官网整理导师邮箱数据，然后写入 `data/teachers.json` 或准备 `.xlsx` 文件。
+
+#### JSON（对象）
 
 ```json
 {
@@ -65,7 +136,7 @@ uv run python test_config.py
 }
 ```
 
-### JSON（数组）
+#### JSON（数组）
 
 ```json
 [
@@ -74,31 +145,55 @@ uv run python test_config.py
 ]
 ```
 
-## 发布与 CI/CD
+#### XLSX
 
-- `push main`：执行 QA 与三平台构建验证（不发布 Release）
-- `push v* tag`：执行 QA，自动发布三平台正式安装包
+- 推荐表头：`邮箱/邮箱地址/email` 与 `姓名/name`
+- 或者：A 列为邮箱，B 列为姓名
 
-工作流文件：`.github/workflows/desktop-release.yml`
+### 4) 附件配置
 
-## 项目结构
+把附件放到 `attachments/`，并在 `config.py` 中配置：
 
-```text
-apps/desktop/                 # Tauri + React 桌面应用
-bulk_email_sender/            # Python 核心发送引擎
-scripts/                      # QA / runtime 辅助脚本
-tests/                        # Python 单元与集成测试
-config.py                     # 传统 CLI 配置入口
-main.py                       # 传统 CLI 主程序
-worker.py                     # Desktop 调用的 Python Worker 入口
+```python
+ATTACHMENTS = [
+  "attachments/resume.pdf",
+  "attachments/transcript.pdf",
+]
 ```
 
-## 合规与安全
+### 5) 发送控制与去重
 
-- 仅用于合法、合规的邮件沟通场景
-- 请使用邮箱授权码，不要使用网页登录密码
-- 发送前请确认目标人群与频率策略，避免骚扰与滥发
+`config.py` 常用项：
 
-## License
+```python
+MIN_DELAY = 30
+MAX_DELAY = 60
+RANDOMIZE_ORDER = True
+ADD_TEACHER_SUFFIX = True
+```
 
-MIT
+发送记录会写入 `sent_records.jsonl`，重复运行时会自动跳过已发送邮箱。
+
+## 🔧 故障排除（常见问题）
+
+1. **认证失败**
+   - 检查邮箱地址与授权码是否正确
+   - 确认已开启 SMTP / IMAP / POP3 等相关开关（各邮箱不同）
+2. **连接失败**
+   - 检查 `SMTP_SERVER`、`SMTP_PORT` 是否正确
+   - 尝试切换端口（465/587）与加密方式
+3. **被识别为垃圾邮件**
+   - 增加发送间隔
+   - 优化正文质量与个性化程度
+   - 控制单日发送量
+
+## ⚠️ 免责声明
+
+本工具仅供学习与合法用途使用。使用者应当：
+1. 遵守相关法律法规与邮件服务商条款
+2. 尊重收件人意愿，避免骚扰与滥发
+3. 妥善保管授权码等敏感信息
+
+## 📄 许可证
+
+MIT（见 `LICENSE`）
