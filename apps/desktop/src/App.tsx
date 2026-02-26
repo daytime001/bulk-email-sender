@@ -114,11 +114,11 @@ const toErrMsg = (error: unknown, fallback = '操作失败'): string => {
 const DEFAULT_SUBJECT = '推免自荐+学校名称+您的姓名';
 const DEFAULT_BODY_TEXT = `尊敬的{teacher_name}老师：
 
-　　您好！我是来自XXX大学XXX专业的XXX，预计能够以专业第X的成绩获得推免资格。冒昧致信，请问您是否还有空余的招生名额？下面是我的一些基本情况介绍，随信附上个人简历与成绩单。
+\u3000\u3000您好！我是来自XXX大学XXX专业的XXX，预计能够以专业第X的成绩获得推免资格。冒昧致信，请问您是否还有空余的招生名额？下面是我的一些基本情况介绍，随信附上个人简历与成绩单。
 
-　　【请在此处填写您的个人介绍内容】
+\u3000\u3000【请在此处填写您的个人介绍内容】
 
-　　感谢拨冗垂阅，如有不妥望您海涵，诚盼老师的回复！
+\u3000\u3000感谢拨冗垂阅，如有不妥望您海涵，诚盼老师的回复！
 
 {sender_name}
 {send_date}`;
@@ -138,7 +138,7 @@ interface WaitInfo {
 
 type SmtpTestState = 'idle' | 'testing' | 'success' | 'error';
 
-const DEFAULT_RECIPIENT_PATH = 'data/teachers.json';
+const DEFAULT_RECIPIENT_PATH = 'examples/recipients/recipients_sample.json';
 const REQUIRED_BODY_TOKENS = ['{teacher_name}', '{sender_name}', '{send_date}'] as const;
 
 function AppContent() {

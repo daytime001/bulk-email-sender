@@ -40,7 +40,7 @@
     "resources": [
       "../../../worker.py",
       "../../../bulk_email_sender",
-      "../../../assets/samples"
+      "../../../examples/recipients"
     ]
   }
 }

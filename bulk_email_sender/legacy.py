@@ -26,7 +26,9 @@ def ensure_legacy_config_ready(config: ModuleType) -> None:
 
 
 def load_recipients_from_legacy_config(config: ModuleType) -> RecipientLoadResult:
-    data_file = Path(getattr(config, "TEACHER_DATA_FILE", "data/teachers.json"))
+    data_file = Path(
+        getattr(config, "TEACHER_DATA_FILE", "examples/recipients/recipients_sample.json")
+    )
     return load_recipients(data_file)
 
 

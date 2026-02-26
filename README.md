@@ -4,8 +4,6 @@
 
 # Bulk-Email-Sender
 
-**版权所属：极客昼语**
-
 **批量 · 个性化 · 高效发邮件**
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white)](https://python.org)
@@ -21,14 +19,14 @@
 
 ## ✨ 核心功能
 
-| 功能             | 说明                                              |
-| ---------------- | ------------------------------------------------- |
-| 🚀 **批量发送**   | 一次性向多位收件人发送邮件                        |
+| 功能             | 说明                                                               |
+| ---------------- | ------------------------------------------------------------------ |
+| 🚀 **批量发送**   | 一次性向多位收件人发送邮件                                         |
 | 🎯 **个性化模板** | 支持 `{teacher_name}` / `{sender_name}` / `{send_date}` 三个占位符 |
-| 📎 **附件支持**   | 可随附简历、成绩单等多个文件                      |
-| 📊 **断点续发**   | 自动记录已发送邮箱，重复运行时跳过，避免重复打扰  |
-| ⏱️ **智能间隔**   | 随机发送间隔，降低触发邮件风控的概率              |
-| 🖥️ **桌面客户端** | 提供图形界面，无需命令行即可使用                  |
+| 📎 **附件支持**   | 可随附简历、成绩单等多个文件                                       |
+| 📊 **断点续发**   | 自动记录已发送邮箱，重复运行时跳过，避免重复打扰                   |
+| ⏱️ **智能间隔**   | 随机发送间隔，降低触发邮件风控的概率                               |
+| 🖥️ **桌面客户端** | 提供图形界面，无需命令行即可使用                                   |
 
 > **注意**：本工具专注于批量发送，暂不含爬虫功能。导师邮箱数据需自行从学校官网整理，或使用「八爪鱼」等可视化工具采集。推荐[Python爬虫入门教程](https://mp.weixin.qq.com/s/1mp60tfnLcVMFH7w6S6rQg)
 
@@ -100,6 +98,11 @@ SMTP_PORT       = 465
 
 **4. 准备收件人数据**（json/xlsx）
 
+可直接从示例目录复制并改造：
+
+- `examples/recipients/recipients_sample.json`
+- `examples/recipients/recipients_sample.xlsx`
+
 **5. 测试配置**
 
 ```bash
@@ -111,6 +114,32 @@ uv run python test_config.py
 ```bash
 uv run python main.py
 ```
+
+---
+
+## 🧭 目录分层约定
+
+- `examples/`：仓库内可复用的示例输入（可提交、可共享）
+- `data/`：本地运行期临时数据（默认忽略，不纳入版本控制）
+- `assets/`：文档展示素材（如截图、图标）
+
+### 精简后核心结构
+
+```text
+bulk-email-sender/
+  bulk_email_sender/        # 核心发送引擎与协议实现
+  apps/desktop/             # 桌面端 (Tauri + React)
+  scripts/qa/               # 质量检查与冒烟脚本
+  scripts/runtime/          # Python runtime 打包与本地模拟脚本
+  examples/recipients/      # 示例收件人文件（唯一示例源）
+  attachments/              # 附件目录（用户自放）
+  config.py                 # CLI 配置入口
+  main.py                   # CLI 发送入口
+  test_config.py            # CLI 配置检查入口
+  worker.py                 # 桌面端 worker 入口
+```
+
+仓库默认不保留开发缓存、构建产物与本地发送记录（通过 `.gitignore` 统一过滤）。
 
 ---
 

@@ -33,7 +33,7 @@ EMAIL_CONTENT = """尊敬的{teacher_name}：
 
 # ==================== 文件路径配置 ====================
 # 收件人数据文件路径（支持 .json / .xlsx）
-TEACHER_DATA_FILE = "data/teachers.json"
+TEACHER_DATA_FILE = "examples/recipients/recipients_sample.json"
 
 # 附件文件路径列表（可为空）
 ATTACHMENTS = []  # 例如: ['attachments/resume.pdf', 'attachments/transcript.pdf']

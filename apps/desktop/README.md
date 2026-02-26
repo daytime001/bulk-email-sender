@@ -67,6 +67,7 @@ npm run tauri:build:app -- --debug
 - 首次初始化会自动写入示例收件人文件：
   - `recipients_sample.json`
   - `recipients_sample.xlsx`
+  - 示例源文件位于仓库：`examples/recipients/`
 - SMTP 测试连接支持实时状态与耗时显示。
 
 ## 与 Python worker 的协议约定

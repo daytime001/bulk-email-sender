@@ -1,12 +1,16 @@
 private_docs/
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .venv/
 .ruff_cache/
 dist/
 email_log.txt
 sent_records.jsonl
+sent_records.txt
 apps/desktop/node_modules/
+apps/desktop/dist/
 apps/desktop/src-tauri/target/
 scripts/qa/.real_email.env
-data/test.json
+data/
+.DS_Store

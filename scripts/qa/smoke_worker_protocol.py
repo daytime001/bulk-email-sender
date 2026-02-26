@@ -18,6 +18,7 @@ import json
 import socketserver
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from contextlib import suppress
@@ -26,8 +27,6 @@ from email.policy import default as email_policy
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "data"
-RECIPIENTS_FILE = DATA_DIR / "teachers.json"
 
 SAMPLE_RECIPIENTS = [
     {"name": "张教授", "email": "zhang@example.test"},
@@ -117,90 +116,90 @@ def find(events: list[dict], type_: str) -> dict | None:
 
 
 def run() -> None:
-    # 准备收件人文件
-    DATA_DIR.mkdir(exist_ok=True)
-    RECIPIENTS_FILE.write_text(
-        json.dumps(SAMPLE_RECIPIENTS, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    with tempfile.TemporaryDirectory(prefix="smoke_recipients_") as temp_dir:
+        recipients_file = Path(temp_dir) / "teachers.json"
+        recipients_file.write_text(
+            json.dumps(SAMPLE_RECIPIENTS, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
-    # 启动本地 SMTP 服务器
-    smtp_server, smtp_port = start_smtp_server()
-    time.sleep(0.05)
+        # 启动本地 SMTP 服务器
+        smtp_server, smtp_port = start_smtp_server()
+        time.sleep(0.05)
 
-    smtp_payload = {
-        "host": "127.0.0.1",
-        "port": smtp_port,
-        "username": "",
-        "password": "",
-        "use_ssl": False,
-        "use_starttls": False,
-    }
-    template_payload = {
-        "subject": "冒烟测试主题",
-        "body_text": "你好 {{ teacher_name }}, 这是测试邮件.",
-    }
-    sender_valid = {"email": "smoker@test", "name": "冒烟测试"}
+        smtp_payload = {
+            "host": "127.0.0.1",
+            "port": smtp_port,
+            "username": "",
+            "password": "",
+            "use_ssl": False,
+            "use_starttls": False,
+        }
+        template_payload = {
+            "subject": "冒烟测试主题",
+            "body_text": "你好 {{ teacher_name }}, 这是测试邮件.",
+        }
+        sender_valid = {"email": "smoker@test.com", "name": "冒烟测试"}
 
-    # 命令顺序:
-    # 1. load_recipients
-    # 2. test_smtp
-    # 3. bogus_cmd → error
-    # 4. start_send 空发件邮箱 → validation error (在 job 线程启动前就报错)
-    # 5. start_send 正常发送 → job thread; 进程退出前 main() 会 join 线程
-    commands: list[dict] = [
-        {
-            "type": "load_recipients",
-            "payload": {"path": str(RECIPIENTS_FILE)},
-        },
-        {
-            "type": "test_smtp",
-            "payload": smtp_payload,
-        },
-        {
-            "type": "bogus_cmd",
-        },
-        {
-            "type": "start_send",
-            "payload": {
-                "sender": {"email": "", "name": ""},
-                "smtp": smtp_payload,
-                "template": template_payload,
-                "recipients": SAMPLE_RECIPIENTS,
-                "options": {"min_delay_sec": 0, "max_delay_sec": 0},
+        # 命令顺序:
+        # 1. load_recipients
+        # 2. test_smtp
+        # 3. bogus_cmd → error
+        # 4. start_send 空发件邮箱 → validation error (在 job 线程启动前就报错)
+        # 5. start_send 正常发送 → job thread; 进程退出前 main() 会 join 线程
+        commands: list[dict] = [
+            {
+                "type": "load_recipients",
+                "payload": {"path": str(recipients_file)},
             },
-        },
-        {
-            "type": "start_send",
-            "payload": {
-                "sender": sender_valid,
-                "smtp": smtp_payload,
-                "template": template_payload,
-                "recipients": SAMPLE_RECIPIENTS,
-                "options": {"min_delay_sec": 0, "max_delay_sec": 0},
+            {
+                "type": "test_smtp",
+                "payload": smtp_payload,
             },
-        },
-    ]
-    stdin_data = "\n".join(json.dumps(c, ensure_ascii=False) for c in commands) + "\n"
+            {
+                "type": "bogus_cmd",
+            },
+            {
+                "type": "start_send",
+                "payload": {
+                    "sender": {"email": "", "name": ""},
+                    "smtp": smtp_payload,
+                    "template": template_payload,
+                    "recipients": SAMPLE_RECIPIENTS,
+                    "options": {"min_delay_sec": 0, "max_delay_sec": 0},
+                },
+            },
+            {
+                "type": "start_send",
+                "payload": {
+                    "sender": sender_valid,
+                    "smtp": smtp_payload,
+                    "template": template_payload,
+                    "recipients": SAMPLE_RECIPIENTS,
+                    "options": {"min_delay_sec": 0, "max_delay_sec": 0},
+                },
+            },
+        ]
+        stdin_data = "\n".join(json.dumps(c, ensure_ascii=False) for c in commands) + "\n"
 
-    # 启动 worker 子进程
-    proc = subprocess.Popen(
-        [sys.executable, "-u", "-m", "bulk_email_sender.worker"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        cwd=str(PROJECT_ROOT),
-    )
+        # 启动 worker 子进程
+        proc = subprocess.Popen(
+            [sys.executable, "-u", "-m", "bulk_email_sender.worker"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+        )
 
-    try:
-        stdout_data, stderr_data = proc.communicate(input=stdin_data, timeout=45)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        stdout_data, stderr_data = proc.communicate()
-        print(f"  {_FAIL} worker 超时 (45s)")
-        _failures.append("worker subprocess timed out")
-        return
+        try:
+            stdout_data, stderr_data = proc.communicate(input=stdin_data, timeout=45)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout_data, stderr_data = proc.communicate()
+            print(f"  {_FAIL} worker 超时 (45s)")
+            _failures.append("worker subprocess timed out")
+            return
 
     events: list[dict] = []
     for line in stdout_data.splitlines():
