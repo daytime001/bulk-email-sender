@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from datetime import datetime
-from html import escape
 import random
 import re
 import threading
 import time
-from math import ceil
 from collections.abc import Iterator
+from datetime import datetime
+from html import escape
+from math import ceil
 from pathlib import Path
 from typing import Any
 

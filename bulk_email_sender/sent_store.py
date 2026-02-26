@@ -24,7 +24,9 @@ class SentStore:
         self._emails = self._load_emails()
         self._handle: TextIOWrapper | None = None
         self._text_handle: TextIOWrapper | None = None
-        self._text_header_written = bool(self.text_path and self.text_path.exists() and self.text_path.stat().st_size > 0)
+        self._text_header_written = bool(
+            self.text_path and self.text_path.exists() and self.text_path.stat().st_size > 0
+        )
 
     # -- context manager for batch writes --------------------------------------
 
