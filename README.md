@@ -65,7 +65,7 @@
 #### 软件预览
 
 <div align="center">
-  <img src="assets/screenshot.png" alt="Desktop Screenshot" width="1200" />
+  <img src="assets/demo.png" alt="Desktop Screenshot" width="1200" />
 </div>
 
 
