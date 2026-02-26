@@ -141,7 +141,7 @@ def run() -> None:
                 "sender": {"email": sender_email, "name": sender_name},
                 "smtp": smtp_payload,
                 "template": {
-                    "subject": "【冒烟测试】Bulk Email Sender 测试邮件",
+                    "subject": "【冒烟测试】Bulk-Email-Sender 测试邮件",
                     "body_text": (
                         "你好 {{ teacher_name }},\n\n"
                         "这是 bulk-email-sender 项目的功能冒烟测试邮件。\n"

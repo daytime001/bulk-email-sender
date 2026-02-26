@@ -21,7 +21,10 @@ class RecipientLoadError(ValueError):
 class RecipientStats:
     total_rows: int
     valid_rows: int
+    sendable_rows: int
     invalid_rows: int
+    invalid_email_rows: int
+    missing_name_rows: int
     duplicate_rows: int
     empty_rows: int
 
@@ -32,7 +35,11 @@ class RecipientLoadResult:
     stats: RecipientStats
 
 
-def load_recipients(file_path: str | Path) -> RecipientLoadResult:
+def load_recipients(
+    file_path: str | Path,
+    *,
+    raise_on_invalid: bool = True,
+) -> RecipientLoadResult:
     path = Path(file_path)
     if not path.exists():
         raise RecipientLoadError(f"Recipient file not found: {path}")
@@ -45,7 +52,7 @@ def load_recipients(file_path: str | Path) -> RecipientLoadResult:
     else:
         raise RecipientLoadError(f"Unsupported recipient file format: {suffix}")
 
-    return _normalize_rows(rows)
+    return _normalize_rows(rows, raise_on_invalid=raise_on_invalid)
 
 
 def _load_json_rows(path: Path) -> list[tuple[int, object, object]]:
@@ -118,10 +125,17 @@ def _detect_header_map(row: Iterable[object]) -> tuple[int, int] | None:
     return email_idx, name_idx
 
 
-def _normalize_rows(rows: list[tuple[int, object, object]]) -> RecipientLoadResult:
+def _normalize_rows(
+    rows: list[tuple[int, object, object]],
+    *,
+    raise_on_invalid: bool,
+) -> RecipientLoadResult:
     seen: set[str] = set()
     recipients: list[Recipient] = []
     invalid_messages: list[str] = []
+    sendable_rows = 0
+    invalid_email_rows = 0
+    missing_name_rows = 0
     duplicate_rows = 0
     empty_rows = 0
 
@@ -134,13 +148,16 @@ def _normalize_rows(rows: list[tuple[int, object, object]]) -> RecipientLoadResu
             continue
 
         if not _looks_like_email(email):
+            invalid_email_rows += 1
             invalid_messages.append(f"row {row_number}: invalid email '{email}'")
             continue
 
         if not name:
+            missing_name_rows += 1
             invalid_messages.append(f"row {row_number}: missing recipient name")
             continue
 
+        sendable_rows += 1
         email_key = email.lower()
         if email_key in seen:
             duplicate_rows += 1
@@ -149,15 +166,19 @@ def _normalize_rows(rows: list[tuple[int, object, object]]) -> RecipientLoadResu
         seen.add(email_key)
         recipients.append(Recipient(email=email, name=name))
 
-    if invalid_messages:
+    if raise_on_invalid and invalid_messages:
         details = "; ".join(invalid_messages[:20])
         raise RecipientLoadError(f"Recipient file contains invalid rows: {details}")
 
     total_rows = len(rows)
+    invalid_rows = invalid_email_rows + missing_name_rows
     stats = RecipientStats(
         total_rows=total_rows,
         valid_rows=len(recipients),
-        invalid_rows=len(invalid_messages),
+        sendable_rows=sendable_rows,
+        invalid_rows=invalid_rows,
+        invalid_email_rows=invalid_email_rows,
+        missing_name_rows=missing_name_rows,
         duplicate_rows=duplicate_rows,
         empty_rows=empty_rows,
     )

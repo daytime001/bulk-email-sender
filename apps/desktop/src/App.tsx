@@ -1,24 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { LoadingOutlined } from '@ant-design/icons';
 import { flushSync } from 'react-dom';
 import {
-  Alert,
   App,
-  Button,
   Card,
-  Checkbox,
-  Col,
-  Collapse,
-  Form,
-  Input,
-  InputNumber,
-  Progress,
-  Row,
-  Select,
   Space,
-  Table,
   Tabs,
-  Tag,
   Typography,
 } from 'antd';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -28,17 +14,25 @@ import {
   cancelSend,
   clearRuntimePython,
   clearSentRecords,
+  getAppPaths,
   getRuntimeStatus,
   loadRecipients,
+  loadAppDraft,
+  openPath,
+  saveAppDraft,
+  setDataDir,
   setRuntimePython,
   startSend,
   testSmtp,
 } from './services/backend';
-import type { Recipient, RuntimeStatus, SendPayload, WorkerEvent } from './types';
+import { EmailContentWorkspace } from './features/email-content/EmailContentWorkspace';
+import { RecipientsWorkspace } from './features/recipients/RecipientsWorkspace';
+import { SettingsWorkspace } from './features/settings/SettingsWorkspace';
+import { SenderSettingsWorkspace } from './features/sender-settings/SenderSettingsWorkspace';
+import type { AppPaths, Recipient, RecipientStats, RuntimeStatus, SendPayload, WorkerEvent } from './types';
 import './App.css';
 
 const { Title, Text } = Typography;
-const APP_DRAFT_STORAGE_KEY = 'bulk-email-sender:draft:v1';
 const DEFAULT_SMTP_HOST = 'smtp.163.com';
 const DEFAULT_SMTP_PORT = 465;
 const SMTP_PROVIDER_CUSTOM_KEY = 'custom';
@@ -118,7 +112,16 @@ const toErrMsg = (error: unknown, fallback = '操作失败'): string => {
 };
 
 const DEFAULT_SUBJECT = '推免自荐+学校名称+您的姓名';
-const DEFAULT_BODY_TEXT = '尊敬的{teacher_name}：\\n\\n您好，冒昧致信。';
+const DEFAULT_BODY_TEXT = `尊敬的{teacher_name}老师：
+
+　　您好！我是来自XXX大学XXX专业的XXX，预计能够以专业第X的成绩获得推免资格。冒昧致信，请问您是否还有空余的招生名额？下面是我的一些基本情况介绍，随信附上个人简历与成绩单。
+
+　　【请在此处填写您的个人介绍内容】
+
+　　感谢拨冗垂阅，如有不妥望您海涵，诚盼老师的回复！
+
+{sender_name}
+{send_date}`;
 
 interface SendSummary {
   total: number;
@@ -127,62 +130,16 @@ interface SendSummary {
   skipped: number;
 }
 
+interface WaitInfo {
+  remainingSec: number;
+  delaySec: number;
+  nextIndex: number;
+}
+
 type SmtpTestState = 'idle' | 'testing' | 'success' | 'error';
 
 const DEFAULT_RECIPIENT_PATH = 'data/teachers.json';
-
-interface AppDraft {
-  senderEmail: string;
-  senderName: string;
-  smtpProvider: string;
-  smtpHost: string;
-  smtpPort: number;
-  subject: string;
-  bodyText: string;
-  recipientsPath: string;
-  attachmentsText: string;
-}
-
-function renderPreviewTemplate(templateText: string, variables: Record<string, string>): string {
-  let output = templateText;
-  for (const [key, value] of Object.entries(variables)) {
-    const doublePattern = new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, 'g');
-    const singlePattern = new RegExp(`\\{\\s*${key}\\s*\\}`, 'g');
-    output = output.replace(doublePattern, value).replace(singlePattern, value);
-  }
-  return output;
-}
-
-function toSmtpTestAlertType(state: SmtpTestState): 'info' | 'success' | 'error' {
-  if (state === 'success') {
-    return 'success';
-  }
-  if (state === 'error') {
-    return 'error';
-  }
-  return 'info';
-}
-
-function loadDraft(): Partial<AppDraft> | null {
-  try {
-    const raw = window.localStorage.getItem(APP_DRAFT_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as Partial<AppDraft>;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function saveDraft(draft: AppDraft): void {
-  try {
-    window.localStorage.setItem(APP_DRAFT_STORAGE_KEY, JSON.stringify(draft));
-  } catch {
-    return;
-  }
-}
+const REQUIRED_BODY_TOKENS = ['{teacher_name}', '{sender_name}', '{send_date}'] as const;
 
 function AppContent() {
   const { message } = App.useApp();
@@ -199,6 +156,7 @@ function AppContent() {
 
   const [recipientsPath, setRecipientsPath] = useState(DEFAULT_RECIPIENT_PATH);
   const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [recipientsStats, setRecipientsStats] = useState<RecipientStats | null>(null);
 
   const [attachmentsText, setAttachmentsText] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -208,16 +166,18 @@ function AppContent() {
   const [smtpTestElapsedSec, setSmtpTestElapsedSec] = useState(0);
   const [currentStatus, setCurrentStatus] = useState('等待开始发送');
   const [summary, setSummary] = useState<SendSummary>({ total: 0, success: 0, failed: 0, skipped: 0 });
+  const [waitInfo, setWaitInfo] = useState<WaitInfo | null>(null);
   const [failures, setFailures] = useState<Array<{ email: string; name: string; error: string }>>([]);
   const [skipSent, setSkipSent] = useState(true);
   const [minDelaySec, setMinDelaySec] = useState(5);
   const [maxDelaySec, setMaxDelaySec] = useState(10);
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
-  const [runtimePanelOpen, setRuntimePanelOpen] = useState(true);
-  const hasAutoCollapsed = useRef(false);
   const smtpTestTickerRef = useRef<number | null>(null);
   const [runtimePath, setRuntimePath] = useState('');
   const [runtimeBusy, setRuntimeBusy] = useState(false);
+  const [dataPaths, setDataPaths] = useState<AppPaths | null>(null);
+  const [dataDirInput, setDataDirInput] = useState('');
+  const [dataPathBusy, setDataPathBusy] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
   const isTauriRuntime = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
@@ -234,24 +194,11 @@ function AppContent() {
     return Math.round((done / summary.total) * 100);
   }, [summary]);
 
-  const recipientsColumns = [
-    { title: '邮箱', dataIndex: 'email', key: 'email' },
-    { title: '姓名', dataIndex: 'name', key: 'name' },
-  ];
+  const doneCount = useMemo(
+    () => summary.success + summary.failed + summary.skipped,
+    [summary.failed, summary.skipped, summary.success],
+  );
 
-  const failureColumns = [
-    { title: '邮箱', dataIndex: 'email', key: 'email' },
-    { title: '姓名', dataIndex: 'name', key: 'name' },
-    { title: '错误信息', dataIndex: 'error', key: 'error' },
-  ];
-
-  const previewRecipient = recipients[0] ?? { email: 'teacher@example.com', name: '张教授' };
-  const previewVariables = {
-    teacher_name: previewRecipient.name,
-    teacher_email: previewRecipient.email,
-    sender_name: senderName || '你的姓名',
-  };
-  const previewBody = renderPreviewTemplate(bodyText, previewVariables);
   const selectedSmtpPreset = smtpProvider === SMTP_PROVIDER_CUSTOM_KEY ? null : SMTP_PROVIDER_PRESET_MAP[smtpProvider] ?? null;
   const effectiveSmtpSecurity: SmtpSecurity = selectedSmtpPreset?.security ?? 'ssl';
   const effectiveSmtpUsername = senderEmail.trim();
@@ -262,13 +209,6 @@ function AppContent() {
     }
     return Array.isArray(selection) ? selection : [selection];
   };
-
-  useEffect(() => {
-    if (runtimeStatus?.ready && !hasAutoCollapsed.current) {
-      hasAutoCollapsed.current = true;
-      setRuntimePanelOpen(false);
-    }
-  }, [runtimeStatus?.ready]);
 
   useEffect(() => {
     return () => {
@@ -288,69 +228,98 @@ function AppContent() {
     }
   }, [message]);
 
+  const refreshAppPaths = useCallback(async () => {
+    try {
+      const paths = await getAppPaths();
+      setDataPaths(paths);
+      setDataDirInput(paths.data_dir);
+    } catch (error) {
+      message.error(toErrMsg(error, '读取数据目录失败'));
+    }
+  }, [message]);
+
   useEffect(() => {
     void refreshRuntimeStatus();
   }, [refreshRuntimeStatus]);
 
   useEffect(() => {
-    const draft = loadDraft();
-    if (draft) {
-      if (typeof draft.senderEmail === 'string') {
-        setSenderEmail(draft.senderEmail);
+    void refreshAppPaths();
+  }, [refreshAppPaths]);
+
+  useEffect(() => {
+    const hydrateDraft = async () => {
+      try {
+        const draft = await loadAppDraft();
+        if (typeof draft.senderEmail === 'string') {
+          setSenderEmail(draft.senderEmail);
+        }
+        if (typeof draft.senderName === 'string') {
+          setSenderName(draft.senderName);
+        }
+        if (typeof draft.smtpProvider === 'string') {
+          setSmtpProvider(draft.smtpProvider);
+        }
+        if (typeof draft.smtpHost === 'string') {
+          setSmtpHost(draft.smtpHost);
+        }
+        if (typeof draft.smtpPort === 'number') {
+          setSmtpPort(draft.smtpPort);
+        }
+        if (typeof draft.subject === 'string') {
+          setSubject(draft.subject);
+        }
+        if (typeof draft.bodyText === 'string') {
+          setBodyText(draft.bodyText);
+        }
+        if (typeof draft.recipientsPath === 'string') {
+          setRecipientsPath(draft.recipientsPath);
+        }
+        if (typeof draft.attachmentsText === 'string') {
+          setAttachmentsText(draft.attachmentsText);
+        }
+        if (typeof draft.smtpPassword === 'string') {
+          setSmtpPassword(draft.smtpPassword);
+        }
+      } catch (error) {
+        message.error(toErrMsg(error, '读取草稿配置失败'));
+      } finally {
+        setDraftHydrated(true);
       }
-      if (typeof draft.senderName === 'string') {
-        setSenderName(draft.senderName);
-      }
-      if (typeof draft.smtpProvider === 'string') {
-        setSmtpProvider(draft.smtpProvider);
-      }
-      if (typeof draft.smtpHost === 'string') {
-        setSmtpHost(draft.smtpHost);
-      }
-      if (typeof draft.smtpPort === 'number') {
-        setSmtpPort(draft.smtpPort);
-      }
-      if (typeof draft.subject === 'string') {
-        setSubject(draft.subject);
-      }
-      if (typeof draft.bodyText === 'string') {
-        setBodyText(draft.bodyText);
-      }
-      if (typeof draft.recipientsPath === 'string') {
-        setRecipientsPath(draft.recipientsPath);
-      }
-      if (typeof draft.attachmentsText === 'string') {
-        setAttachmentsText(draft.attachmentsText);
-      }
-    }
-    setDraftHydrated(true);
-  }, []);
+    };
+
+    void hydrateDraft();
+  }, [message]);
 
   useEffect(() => {
     if (!draftHydrated) {
       return;
     }
-    saveDraft({
+    void saveAppDraft({
       senderEmail,
       senderName,
       smtpProvider,
       smtpHost,
       smtpPort,
+      smtpPassword,
       subject,
       bodyText,
       recipientsPath,
       attachmentsText,
+    }).catch((error: unknown) => {
+      message.error(toErrMsg(error, '保存草稿配置失败'));
     });
   }, [
     attachmentsText,
     bodyText,
     draftHydrated,
+    message,
     recipientsPath,
     senderEmail,
     senderName,
     smtpProvider,
     smtpHost,
     smtpPort,
+    smtpPassword,
     subject,
   ]);
 
@@ -461,6 +430,83 @@ function AppContent() {
     }
   };
 
+  const handlePickDataDir = async () => {
+    if (!isTauriRuntime) {
+      message.info('浏览器模式下请手动输入路径');
+      return;
+    }
+    const selected = await open({
+      multiple: false,
+      directory: true,
+      title: '选择记录与配置保存目录',
+    });
+    const paths = normalizeDialogSelection(selected);
+    if (paths.length > 0) {
+      setDataDirInput(paths[0]);
+    }
+  };
+
+  const handleApplyDataDir = async () => {
+    setDataPathBusy(true);
+    try {
+      const paths = await setDataDir(dataDirInput.trim());
+      setDataPaths(paths);
+      setDataDirInput(paths.data_dir);
+      message.success('数据目录已保存');
+    } catch (error) {
+      message.error(toErrMsg(error, '保存数据目录失败'));
+    } finally {
+      setDataPathBusy(false);
+    }
+  };
+
+  const handleResetDataDir = async () => {
+    setDataPathBusy(true);
+    try {
+      const paths = await setDataDir('');
+      setDataPaths(paths);
+      setDataDirInput(paths.data_dir);
+      message.success('已恢复默认数据目录');
+    } catch (error) {
+      message.error(toErrMsg(error, '恢复默认目录失败'));
+    } finally {
+      setDataPathBusy(false);
+    }
+  };
+
+  const handleOpenDataDir = async () => {
+    if (!dataPaths) {
+      return;
+    }
+    try {
+      await openPath(dataPaths.data_dir);
+    } catch (error) {
+      message.error(toErrMsg(error, '打开数据目录失败'));
+    }
+  };
+
+  const handleOpenReadableRecord = async () => {
+    if (!dataPaths) {
+      return;
+    }
+    try {
+      await openPath(dataPaths.sent_store_text_file);
+    } catch (error) {
+      message.error(toErrMsg(error, '打开可读记录失败'));
+    }
+  };
+
+  const handleOpenDraftConfig = async () => {
+    if (!dataPaths) {
+      return;
+    }
+    try {
+      await openPath(dataPaths.app_draft_file);
+    } catch (error) {
+      message.error(toErrMsg(error, '打开配置文件失败'));
+    }
+  };
+
   const handleAutoDetectRuntime = async () => {
     setRuntimeBusy(true);
     try {
@@ -496,10 +542,12 @@ function AppContent() {
     try {
       const result = await loadRecipients(recipientsPath);
       setRecipients(result.recipientsPreview);
+      setRecipientsStats(result.stats);
       message.success(
-        `导入成功：有效 ${result.stats.valid_rows} 条，重复 ${result.stats.duplicate_rows} 条，空行 ${result.stats.empty_rows} 条`,
+        `导入成功：总数 ${result.stats.total_rows} 条，可发送 ${result.stats.sendable_rows} 条，无效邮箱 ${result.stats.invalid_email_rows} 条，缺姓名 ${result.stats.missing_name_rows} 条`,
       );
     } catch (error) {
+      setRecipientsStats(null);
       message.error(toErrMsg(error, '导入失败'));
     }
   };
@@ -579,23 +627,27 @@ function AppContent() {
   const handleEvent = (event: WorkerEvent) => {
     if (event.type === 'job_started') {
       setSummary({ total: event.total, success: 0, failed: 0, skipped: 0 });
+      setWaitInfo(null);
       setFailures([]);
       setCurrentStatus(`任务已启动，总计 ${event.total} 封`);
       return;
     }
 
     if (event.type === 'recipient_started') {
+      setWaitInfo(null);
       setCurrentStatus(`正在发送：${event.name} (${event.email})`);
       return;
     }
 
     if (event.type === 'recipient_sent') {
+      setWaitInfo(null);
       setSummary((prev) => ({ ...prev, success: prev.success + 1 }));
       setCurrentStatus(`发送成功：${event.name} (${event.email})`);
       return;
     }
 
     if (event.type === 'recipient_failed') {
+      setWaitInfo(null);
       setSummary((prev) => ({ ...prev, failed: prev.failed + 1 }));
       setFailures((prev) => [...prev, { email: event.email, name: event.name, error: event.error }]);
       setCurrentStatus(`发送失败：${event.name} (${event.email})`);
@@ -603,12 +655,24 @@ function AppContent() {
     }
 
     if (event.type === 'recipient_skipped') {
+      setWaitInfo(null);
       setSummary((prev) => ({ ...prev, skipped: prev.skipped + 1 }));
       setCurrentStatus(`已跳过：${event.name} (${event.email})`);
       return;
     }
 
+    if (event.type === 'inter_send_wait') {
+      setWaitInfo({
+        remainingSec: event.remaining_sec,
+        delaySec: event.delay_sec,
+        nextIndex: event.next_index,
+      });
+      setCurrentStatus(`间隔等待中：${event.remaining_sec}s 后发送第 ${event.next_index} 封（本轮 ${event.delay_sec}s）`);
+      return;
+    }
+
     if (event.type === 'job_finished') {
+      setWaitInfo(null);
       setSummary({ total: event.total, success: event.success, failed: event.failed, skipped: event.skipped });
       setFailures(event.failures);
       setCurrentStatus('发送任务完成');
@@ -617,6 +681,7 @@ function AppContent() {
     }
 
     if (event.type === 'job_cancelled') {
+      setWaitInfo(null);
       setSummary({ total: event.total, success: event.success, failed: event.failed, skipped: event.skipped });
       setCurrentStatus('任务已取消');
       setIsSending(false);
@@ -624,6 +689,7 @@ function AppContent() {
     }
 
     if (event.type === 'error') {
+      setWaitInfo(null);
       setCurrentStatus(`任务错误：${event.error}`);
       setIsSending(false);
       return;
@@ -655,12 +721,12 @@ function AppContent() {
       max_delay_sec: maxDelaySec,
       randomize_order: true,
       retry_count: 3,
-      add_teacher_suffix: true,
       skip_sent: skipSent,
     },
     paths: {
-      log_file: 'email_log.txt',
-      sent_store_file: 'sent_records.jsonl',
+      log_file: dataPaths?.log_file ?? 'email_log.txt',
+      sent_store_file: dataPaths?.sent_store_file ?? 'sent_records.jsonl',
+      sent_store_text_file: dataPaths?.sent_store_text_file ?? 'sent_records.txt',
     },
   });
 
@@ -672,18 +738,32 @@ function AppContent() {
       message.error('请先填写发件邮箱');
       return;
     }
+    if (!senderName.trim()) {
+      message.error('请先填写发件人姓名');
+      return;
+    }
     if (!ensureSmtpReady()) {
       return;
     }
     if (!ensureRuntimeReady()) {
       return;
     }
+    const missingBodyTokens = REQUIRED_BODY_TOKENS.filter((token) => !bodyText.includes(token));
+    if (missingBodyTokens.length > 0) {
+      message.error(`邮件正文缺少固定占位符：${missingBodyTokens.join('、')}`);
+      return;
+    }
     if (recipients.length === 0) {
       message.error('请先导入收件人数据');
       return;
     }
+    if (isTauriRuntime && !dataPaths) {
+      message.error('正在初始化数据目录，请稍后重试');
+      return;
+    }
 
     setIsSending(true);
+    setWaitInfo(null);
     setCurrentStatus('正在启动发送任务...');
     setFailures([]);
     try {
@@ -708,7 +788,7 @@ function AppContent() {
   const handleClearSentRecords = async () => {
     try {
       await clearSentRecords();
-      message.success('已清除发送记录');
+      message.success('已清除发送记录（jsonl + txt）');
     } catch (error) {
       message.error(toErrMsg(error, '清除发送记录失败'));
     }
@@ -744,8 +824,8 @@ function AppContent() {
     setBodyText(DEFAULT_BODY_TEXT);
     setRecipientsPath(DEFAULT_RECIPIENT_PATH);
     setRecipients([]);
+    setRecipientsStats(null);
     setAttachmentsText('');
-    window.localStorage.removeItem(APP_DRAFT_STORAGE_KEY);
     message.success('已重置本地草稿配置');
   };
 
@@ -756,326 +836,115 @@ function AppContent() {
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
           <div className="header-block">
             <Title level={3} style={{ margin: 0 }}>
-              批量邮件发送客户端
+              Bulk-Email-Sender
             </Title>
-            <Text type="secondary">M3 进行中：首启 Python runtime 引导 + Worker 协议联调</Text>
-            <Space>
-              <Button onClick={handleResetDraft}>重置本地草稿</Button>
-            </Space>
+            <Text type="secondary">版权所属：极客昼语</Text>
           </div>
 
-          <Collapse
-            activeKey={runtimePanelOpen ? ['runtime'] : []}
-            onChange={(keys) => setRuntimePanelOpen((keys as string[]).includes('runtime'))}
-            items={[{
-              key: 'runtime',
-              label: (
-                <Space size={8}>
-                  <span style={{ fontWeight: 500 }}>Python 运行时</span>
-                  {runtimeStatus ? (
-                    <Tag color={runtimeStatus.ready ? (runtimeStatus.source === 'system' ? 'blue' : 'success') : 'warning'} style={{ margin: 0 }}>
-                      {runtimeStatus.ready
-                        ? `就绪 · ${runtimeStatus.version ?? runtimeStatus.source}`
-                        : '未配置'}
-                    </Tag>
-                  ) : (
-                    <Tag style={{ margin: 0 }}>检测中…</Tag>
-                  )}
-                </Space>
-              ),
-              children: (
-                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                  {runtimeStatus && (
-                    <Alert
-                      type={runtimeStatus.ready ? (runtimeStatus.source === 'system' ? 'info' : 'success') : 'warning'}
-                      showIcon
-                      message={runtimeStatus.ready ? 'Python 运行时已就绪' : '需要先配置 Python 运行时'}
-                      description={`来源：${runtimeStatus.source}${runtimeStatus.version ? ` ｜ ${runtimeStatus.version}` : ''} ｜ ${runtimeStatus.message}`}
-                    />
-                  )}
-                  <Row gutter={12} align="middle">
-                    <Col xs={24} md={18}>
-                      <Input
-                        value={runtimePath}
-                        readOnly
-                        placeholder="尚未配置，请选择文件或点击自动安装"
-                      />
-                    </Col>
-                    <Col xs={24} md={6}>
-                      <Button block loading={runtimeBusy} onClick={() => void handlePickPythonBinary()}>
-                        选择 Python 文件
-                      </Button>
-                    </Col>
-                  </Row>
-
-                  <Button type="primary" block loading={runtimeBusy} onClick={() => void handleAutoDetectRuntime()}>
-                    自动安装 Python（推荐）
-                  </Button>
-
-                  <Space>
-                    <Button onClick={refreshRuntimeStatus}>刷新检测</Button>
-                    <Button danger onClick={handleClearRuntime}>清除配置</Button>
-                  </Space>
-                </Space>
-              ),
-            }]}
-          />
-
           <Tabs
-            defaultActiveKey="sender"
+            defaultActiveKey="settings"
             items={[
+              {
+                key: 'settings',
+                label: '设置',
+                children: (
+                  <SettingsWorkspace
+                    runtimeStatus={runtimeStatus}
+                    runtimePath={runtimePath}
+                    runtimeBusy={runtimeBusy}
+                    dataDirInput={dataDirInput}
+                    dataPathBusy={dataPathBusy}
+                    dataPaths={dataPaths}
+                    onResetDraft={handleResetDraft}
+                    onPickPythonBinary={() => void handlePickPythonBinary()}
+                    onAutoDetectRuntime={() => void handleAutoDetectRuntime()}
+                    onRefreshRuntimeStatus={() => void refreshRuntimeStatus()}
+                    onClearRuntime={() => void handleClearRuntime()}
+                    onDataDirInputChange={setDataDirInput}
+                    onPickDataDir={() => void handlePickDataDir()}
+                    onApplyDataDir={() => void handleApplyDataDir()}
+                    onResetDataDir={() => void handleResetDataDir()}
+                    onOpenDataDir={() => void handleOpenDataDir()}
+                    onOpenReadableRecord={() => void handleOpenReadableRecord()}
+                    onOpenDraftConfig={() => void handleOpenDraftConfig()}
+                  />
+                ),
+              },
               {
                 key: 'sender',
                 label: '发件人设置',
                 children: (
-                  <Form
-                    layout="horizontal"
-                    labelCol={{ flex: '6.5em' }}
-                    wrapperCol={{ flex: 1 }}
-                    labelAlign="left"
-                    colon={false}
-                    style={{ width: '100%' }}
-                  >
-                    <Form.Item label="邮箱类型" required style={{ marginBottom: 10 }}>
-                      <Select
-                        value={smtpProvider}
-                        options={SMTP_PROVIDER_OPTIONS}
-                        onChange={(value) => handleSmtpProviderChange(String(value))}
-                      />
-                    </Form.Item>
-
-                    <Form.Item label="发件邮箱" required style={{ marginBottom: 10 }}>
-                      <Input
-                        placeholder="example@163.com"
-                        value={senderEmail}
-                        onChange={(event) => setSenderEmail(event.target.value)}
-                      />
-                    </Form.Item>
-
-                    <Form.Item label="授权码" required style={{ marginBottom: 10 }}>
-                      <Input.Password
-                        placeholder={selectedSmtpPreset ? `${selectedSmtpPreset.label}需要授权码登录 SMTP` : '授权码（无密码可留空）'}
-                        value={smtpPassword}
-                        onChange={(event) => setSmtpPassword(event.target.value)}
-                      />
-                    </Form.Item>
-
-                    <Form.Item label="发件人姓名" required style={{ marginBottom: 10 }}>
-                      <Input
-                        placeholder="收件方显示的发送人名称"
-                        value={senderName}
-                        onChange={(event) => setSenderName(event.target.value)}
-                      />
-                    </Form.Item>
-
-                    <Form.Item label=" " style={{ marginBottom: 10 }}>
-                      {selectedSmtpPreset ? (
-                        <Alert type="info" showIcon message={selectedSmtpPreset.authHint} />
-                      ) : (
-                        // 自定义模式：显示自定义 SMTP 设置
-                        <Card size="small" title="自定义 SMTP">
-                          <Form
-                            layout="horizontal"
-                            labelCol={{ flex: '6.5em' }}
-                            wrapperCol={{ flex: 1 }}
-                            colon={false}
-                          >
-                            <Form.Item label="SMTP Host" required style={{ marginBottom: 8 }}>
-                              <Input
-                                value={smtpHost}
-                                onChange={(event) => setSmtpHost(event.target.value)}
-                                placeholder="例如 smtp.example.com"
-                              />
-                            </Form.Item>
-                            <Form.Item label="端口" required style={{ marginBottom: 8 }}>
-                              <InputNumber
-                                value={smtpPort > 0 ? smtpPort : null}
-                                onChange={(value) => setSmtpPort(value ?? 0)}
-                                min={1}
-                                max={65535}
-                                placeholder="例如 465"
-                                style={{ width: '100%' }}
-                              />
-                            </Form.Item>
-                            <Form.Item label=" " style={{ marginBottom: 0 }}>
-                              <Alert type="info" showIcon message="SSL：端口 465；STARTTLS：端口 587" />
-                            </Form.Item>
-                          </Form>
-                        </Card>
-                      )}
-                    </Form.Item>
-
-                    <Form.Item label=" " style={{ marginBottom: 0 }}>
-                      <Space>
-                        <Button
-                          loading={isTestingSmtp}
-                          onClick={handleTestSmtp}
-                        >
-                          测试连接
-                        </Button>
-                        {selectedSmtpPreset && (
-                          <Tag color="blue">{effectiveSmtpSecurity.toUpperCase()} · 端口 {smtpPort}</Tag>
-                        )}
-                      </Space>
-                      {smtpTestState !== 'idle' && (
-                        <Alert
-                          style={{ marginTop: 10 }}
-                          showIcon
-                          icon={smtpTestState === 'testing' ? <LoadingOutlined spin /> : undefined}
-                          type={toSmtpTestAlertType(smtpTestState)}
-                          message={
-                            smtpTestState === 'testing'
-                              ? `正在测试 SMTP 连接（${smtpTestElapsedSec.toFixed(1)}s）`
-                              : smtpTestMessage
-                          }
-                          description={
-                            smtpTestState === 'testing'
-                              ? '已发起连接测试，请等待服务商握手返回...'
-                              : undefined
-                          }
-                        />
-                      )}
-                    </Form.Item>
-                  </Form>
+                  <SenderSettingsWorkspace
+                    smtpProvider={smtpProvider}
+                    smtpProviderOptions={SMTP_PROVIDER_OPTIONS}
+                    senderEmail={senderEmail}
+                    senderName={senderName}
+                    smtpPassword={smtpPassword}
+                    smtpHost={smtpHost}
+                    smtpPort={smtpPort}
+                    effectiveSmtpSecurity={effectiveSmtpSecurity}
+                    selectedSmtpPreset={selectedSmtpPreset ? {
+                      label: selectedSmtpPreset.label,
+                      authHint: selectedSmtpPreset.authHint,
+                    } : null}
+                    isTestingSmtp={isTestingSmtp}
+                    smtpTestState={smtpTestState}
+                    smtpTestElapsedSec={smtpTestElapsedSec}
+                    smtpTestMessage={smtpTestMessage}
+                    onSmtpProviderChange={handleSmtpProviderChange}
+                    onSenderEmailChange={setSenderEmail}
+                    onSenderNameChange={setSenderName}
+                    onSmtpPasswordChange={setSmtpPassword}
+                    onSmtpHostChange={setSmtpHost}
+                    onSmtpPortChange={setSmtpPort}
+                    onTestSmtp={() => void handleTestSmtp()}
+                  />
                 ),
               },
               {
                 key: 'recipients',
                 label: '收件人列表',
                 children: (
-                  <Space direction="vertical" size={18} style={{ width: '100%' }}>
-                    <Row gutter={16}>
-                      <Col xs={24} md={18}>
-                        <Form.Item label="收件人文件路径（json / xlsx）" required>
-                          <Input value={recipientsPath} onChange={(event) => setRecipientsPath(event.target.value)} />
-                        </Form.Item>
-                      </Col>
-                      <Col xs={24} md={6}>
-                        <Form.Item label="操作">
-                          <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-                            <Button onClick={handlePickRecipientsFile}>选择文件</Button>
-                            <Button type="default" onClick={handleLoadRecipients}>
-                              解析文件
-                            </Button>
-                          </Space>
-                        </Form.Item>
-                      </Col>
-                    </Row>
-
-                    <Table<Recipient>
-                      size="small"
-                      rowKey={(row) => row.email}
-                      columns={recipientsColumns}
-                      dataSource={recipients}
-                      pagination={{ pageSize: 6 }}
-                    />
-                  </Space>
+                  <RecipientsWorkspace
+                    recipientsPath={recipientsPath}
+                    recipients={recipients}
+                    recipientsStats={recipientsStats}
+                    onRecipientsPathChange={setRecipientsPath}
+                    onPickRecipientsFile={() => void handlePickRecipientsFile()}
+                    onLoadRecipients={() => void handleLoadRecipients()}
+                  />
                 ),
               },
               {
                 key: 'content',
                 label: '邮件内容',
                 children: (
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                    <Form layout="vertical" colon={false} style={{ width: '100%' }}>
-                      <Form.Item label="邮件主题" required style={{ marginBottom: 10 }}>
-                        <Input value={subject} onChange={(event) => setSubject(event.target.value)} />
-                      </Form.Item>
-                      <Form.Item
-                        label="正文模板"
-                        required
-                        style={{ marginBottom: 0 }}
-                      >
-                        <Input.TextArea rows={8} value={bodyText} onChange={(event) => setBodyText(event.target.value)} />
-                      </Form.Item>
-                    </Form>
-
-                    <Card size="small" title="正文预览（基于第一位收件人）">
-                      <Input.TextArea value={previewBody} autoSize={{ minRows: 3, maxRows: 8 }} readOnly />
-                    </Card>
-
-                    <Card
-                      size="small"
-                      title="附件"
-                      extra={
-                        <Space size={6}>
-                          <Button size="small" onClick={handlePickAttachments}>选择</Button>
-                          <Button size="small" onClick={() => setAttachmentsText('')}>清空</Button>
-                        </Space>
-                      }
-                    >
-                      <Input.TextArea
-                        rows={2}
-                        value={attachmentsText}
-                        onChange={(event) => setAttachmentsText(event.target.value)}
-                        placeholder={'attachments/resume.pdf\nattachments/transcript.pdf'}
-                      />
-                    </Card>
-
-                    <div style={{ paddingTop: 4 }}>
-                      <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                        <Space wrap>
-                          <Button type="primary" size="large" loading={isSending} onClick={handleStartSend}>
-                            开始发送
-                          </Button>
-                          <Button danger disabled={!isSending} onClick={handleCancelSend}>
-                            取消任务
-                          </Button>
-                          <Checkbox checked={skipSent} onChange={(e) => setSkipSent(e.target.checked)} disabled={isSending}>跳过已发送</Checkbox>
-                          <Button size="small" disabled={isSending} onClick={handleClearSentRecords}>
-                            清除发送记录
-                          </Button>
-                        </Space>
-
-                        <Space wrap align="center">
-                          <Text type="secondary" style={{ fontSize: 12 }}>发送间隔（秒）：</Text>
-                          <InputNumber
-                            size="small"
-                            min={0}
-                            max={maxDelaySec}
-                            value={minDelaySec}
-                            onChange={(v) => setMinDelaySec(v ?? 0)}
-                            disabled={isSending}
-                            style={{ width: 70 }}
-                          />
-                          <Text type="secondary" style={{ fontSize: 12 }}>~</Text>
-                          <InputNumber
-                            size="small"
-                            min={minDelaySec}
-                            max={600}
-                            value={maxDelaySec}
-                            onChange={(v) => setMaxDelaySec(v ?? 0)}
-                            disabled={isSending}
-                            style={{ width: 70 }}
-                          />
-                        </Space>
-
-                        <Progress percent={progressPercent} status={isSending ? 'active' : 'normal'} style={{ marginBottom: 0 }} />
-
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                          <Text type="secondary" style={{ fontSize: 12 }}>{currentStatus}</Text>
-                          <Space size={4}>
-                            <Tag color="green">成功 {summary.success}</Tag>
-                            <Tag color="red">失败 {summary.failed}</Tag>
-                            <Tag color="gold">跳过 {summary.skipped}</Tag>
-                            <Tag color="blue">总计 {summary.total}</Tag>
-                          </Space>
-                        </div>
-                      </Space>
-                    </div>
-
-                    {failures.length > 0 && (
-                      <Card size="small" title="失败明细">
-                        <Table
-                          size="small"
-                          rowKey={(row) => `${row.email}-${row.error}`}
-                          columns={failureColumns}
-                          dataSource={failures}
-                          pagination={{ pageSize: 5 }}
-                        />
-                      </Card>
-                    )}
-                  </Space>
+                  <EmailContentWorkspace
+                    subject={subject}
+                    bodyText={bodyText}
+                    attachmentsText={attachmentsText}
+                    isSending={isSending}
+                    skipSent={skipSent}
+                    minDelaySec={minDelaySec}
+                    maxDelaySec={maxDelaySec}
+                    progressPercent={progressPercent}
+                    currentStatus={currentStatus}
+                    doneCount={doneCount}
+                    summary={summary}
+                    waitInfo={waitInfo}
+                    failures={failures}
+                    onSubjectChange={setSubject}
+                    onBodyTextChange={setBodyText}
+                    onAttachmentsTextChange={setAttachmentsText}
+                    onPickAttachments={() => void handlePickAttachments()}
+                    onClearAttachments={() => setAttachmentsText('')}
+                    onStartSend={() => void handleStartSend()}
+                    onCancelSend={() => void handleCancelSend()}
+                    onSkipSentChange={setSkipSent}
+                    onClearSentRecords={() => void handleClearSentRecords()}
+                    onMinDelaySecChange={setMinDelaySec}
+                    onMaxDelaySecChange={setMaxDelaySec}
+                  />
                 ),
               },
             ]}

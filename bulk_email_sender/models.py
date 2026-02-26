@@ -40,7 +40,6 @@ class SendOptions:
     max_delay_sec: int = 0
     randomize_order: bool = False
     retry_count: int = 1
-    add_teacher_suffix: bool = False
     skip_sent: bool = True
 
 
@@ -55,3 +54,4 @@ class JobConfig:
     options: SendOptions
     log_file: Path
     sent_store_file: Path
+    sent_store_text_file: Path | None = None

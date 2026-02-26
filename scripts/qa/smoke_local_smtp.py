@@ -127,7 +127,6 @@ def main() -> None:
                 max_delay_sec=0,
                 randomize_order=False,
                 retry_count=1,
-                add_teacher_suffix=True,
                 skip_sent=True,
             ),
             log_file=tmp_path / "email.log",

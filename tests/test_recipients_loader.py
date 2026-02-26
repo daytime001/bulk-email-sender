@@ -73,3 +73,26 @@ def test_invalid_rows_raise_error_with_details(tmp_path: Path) -> None:
         load_recipients(recipients_path)
 
     assert "not-an-email" in str(exc_info.value)
+
+
+def test_load_json_lenient_stats_include_sendable_invalid_and_missing_name(tmp_path: Path) -> None:
+    recipients_path = tmp_path / "teachers-lenient.json"
+    recipients_path.write_text(
+        json.dumps(
+            [
+                {"email": "good1@example.com", "name": "张教授"},
+                {"email": "bad-email", "name": "坏邮箱"},
+                {"email": "good2@example.com", "name": ""},
+                {"email": "good1@example.com", "name": "重复但可发"},
+                {"email": "", "name": ""},
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = load_recipients(recipients_path, raise_on_invalid=False)
+
+    assert result.stats.total_rows == 5
+    assert result.stats.sendable_rows == 2
+    assert result.stats.invalid_email_rows == 1
+    assert result.stats.missing_name_rows == 1

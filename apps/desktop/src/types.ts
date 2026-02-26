@@ -5,6 +5,14 @@ export type WorkerEvent =
   | { type: 'recipient_sent'; job_id: string; index: number; email: string; name: string }
   | { type: 'recipient_failed'; job_id: string; index: number; email: string; name: string; error: string }
   | { type: 'recipient_skipped'; job_id: string; index: number; email: string; name: string; reason: string }
+  | {
+      type: 'inter_send_wait';
+      job_id: string;
+      index: number;
+      next_index: number;
+      delay_sec: number;
+      remaining_sec: number;
+    }
   | { type: 'job_finished'; job_id: string; success: number; failed: number; skipped: number; total: number; failures: Array<{ email: string; name: string; error: string }> }
   | { type: 'job_cancelled'; job_id: string; success: number; failed: number; skipped: number; total: number }
   | { type: 'cancel_requested' }
@@ -20,7 +28,10 @@ export interface Recipient {
 export interface RecipientStats {
   total_rows: number;
   valid_rows: number;
+  sendable_rows: number;
   invalid_rows: number;
+  invalid_email_rows: number;
+  missing_name_rows: number;
   duplicate_rows: number;
   empty_rows: number;
 }
@@ -59,13 +70,34 @@ export interface SendPayload {
     max_delay_sec: number;
     randomize_order: boolean;
     retry_count: number;
-    add_teacher_suffix: boolean;
     skip_sent: boolean;
   };
   paths: {
     log_file: string;
     sent_store_file: string;
+    sent_store_text_file: string;
   };
+}
+
+export interface AppPaths {
+  data_dir: string;
+  sent_store_file: string;
+  sent_store_text_file: string;
+  log_file: string;
+  app_draft_file: string;
+}
+
+export interface AppDraft {
+  senderEmail: string;
+  senderName: string;
+  smtpProvider: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpPassword: string;
+  subject: string;
+  bodyText: string;
+  recipientsPath: string;
+  attachmentsText: string;
 }
 
 export interface RuntimeStatus {

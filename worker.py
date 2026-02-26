@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Worker entrypoint for UI clients."""
+"""
+Wrapper script for bulk_email_sender.worker.
+Legacy entry point for Tauri desktop app.
+"""
 
 from bulk_email_sender.worker import main
 

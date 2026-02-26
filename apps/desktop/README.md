@@ -1,73 +1,97 @@
-# React + TypeScript + Vite
+# Desktop 客户端开发说明
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+本目录是 `Bulk-Email-Sender` 的桌面端（Tauri + React + TypeScript）工程。
 
-Currently, two official plugins are available:
+## 技术栈
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Tauri v2（Rust 命令层）
+- React 19 + TypeScript + Vite
+- Ant Design + shadcn/ui（当前为混合组件方案）
+- Tailwind CSS v4（样式变量与基础 UI 组件）
 
-## React Compiler
+## 环境要求
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Node.js 20+
+- Rust stable（含 `cargo`）
+- Python 3.9+（用于 worker）
+- `uv`（推荐，用于统一 Python 环境）
 
-## Expanding the ESLint configuration
+## 本地启动
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+在仓库根目录准备 Python 依赖：
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+uv sync --dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+进入桌面端目录安装前端依赖：
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+```bash
+cd apps/desktop
+npm install
+```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+启动桌面开发环境（会拉起 Vite + Tauri）：
+
+```bash
+npm run tauri dev
+```
+
+仅调试前端页面（浏览器模式，使用 mock backend）：
+
+```bash
+npm run dev
+```
+
+## 构建与检查
+
+```bash
+npm run lint
+npm run build
+cd src-tauri && cargo check && cd ..
+npm run tauri:build:app -- --debug
+```
+
+## 关键能力
+
+- 发件人设置、收件人导入、邮件内容编辑、系统设置四个工作区拆分。
+- 运行时管理支持：
+  - 自动检测 Python
+  - 手动选择 Python 可执行文件
+  - 清理运行时配置
+- 数据目录可配置，并暴露一键打开能力：
+  - `records/sent_records.jsonl`
+  - `records/sent_records.txt`
+  - `logs/email_log.txt`
+  - `config/app_draft.json`
+- 首次初始化会自动写入示例收件人文件：
+  - `recipients_sample.json`
+  - `recipients_sample.xlsx`
+- SMTP 测试连接支持实时状态与耗时显示。
+
+## 与 Python worker 的协议约定
+
+- 入口脚本：仓库根目录 `worker.py`（包装 `bulk_email_sender.worker`）
+- 常用命令：`load_recipients` / `test_smtp` / `start_send` / `cancel_send`
+- 事件通道：`worker-event`
+- 发送 payload 的 `paths` 字段需同时传：
+  - `sent_store_file`（JSONL 去重记录）
+  - `sent_store_text_file`（可读 TXT 记录）
+
+## 目录结构（简化）
+
+```text
+apps/desktop/
+  src/
+    features/
+      sender-settings/
+      recipients/
+      email-content/
+      settings/
+    components/ui/
+    services/backend.ts
+    types.ts
+  src-tauri/
+    src/lib.rs
+    tauri.conf.json
 ```

@@ -1,0 +1,14 @@
+[
+  {
+    "email": "teacher_a@example.com",
+    "name": "张教授"
+  },
+  {
+    "email": "teacher_b@example.com",
+    "name": "李老师"
+  },
+  {
+    "email": "teacher_c@example.com",
+    "name": "王老师"
+  }
+]

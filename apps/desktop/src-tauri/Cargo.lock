@@ -176,6 +176,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "bulk-email-sender"
+version = "0.1.0"
+dependencies = [
+ "lettre",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "walkdir",
+ "zip",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -542,22 +558,6 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 2.0.117",
-]
-
-[[package]]
-name = "desktop"
-version = "0.1.0"
-dependencies = [
- "lettre",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "walkdir",
- "zip",
 ]
 
 [[package]]

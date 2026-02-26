@@ -61,7 +61,7 @@ class Worker:
         if not path:
             raise RecipientLoadError("Missing recipient file path")
 
-        result = load_recipients(path)
+        result = load_recipients(path, raise_on_invalid=False)
         self.writer.write_line(
             {
                 "type": "recipients_loaded",
@@ -116,7 +116,7 @@ class Worker:
         from bulk_email_sender.smtp_client import SMTPClient
 
         smtp_client = SMTPClient(job.smtp)
-        with SentStore(job.sent_store_file) as sent_store:
+        with SentStore(job.sent_store_file, text_path=job.sent_store_text_file) as sent_store:
             engine = SendEngine(smtp_client=smtp_client, sent_store=sent_store)
             try:
                 for event in engine.send(job, cancel_event=cancel_event):
@@ -157,9 +157,12 @@ def _build_job_config(payload: dict[str, Any]) -> JobConfig:
         field_name="SMTP 超时时间",
         minimum=1,
     )
+    sender_name = str(sender_payload.get("name", "")).strip()
+    if not sender_name:
+        raise ValueError("发件人姓名不能为空")
     sender = Sender(
         email=sender_email,
-        name=sender_payload.get("name"),
+        name=sender_name,
     )
 
     smtp = SMTPConfig(
@@ -196,10 +199,6 @@ def _build_job_config(payload: dict[str, Any]) -> JobConfig:
             field_name="重试次数",
             minimum=1,
         ),
-        add_teacher_suffix=_parse_bool(
-            options_payload.get("add_teacher_suffix", False),
-            field_name="add_teacher_suffix",
-        ),
         skip_sent=_parse_bool(
             options_payload.get("skip_sent", True),
             field_name="skip_sent",
@@ -212,6 +211,11 @@ def _build_job_config(payload: dict[str, Any]) -> JobConfig:
         raise RecipientLoadError("收件人列表不能为空")
     log_file = Path(paths_payload.get("log_file", "email_log.txt"))
     sent_store_file = Path(paths_payload.get("sent_store_file", "sent_records.jsonl"))
+    sent_store_text_file_raw = paths_payload.get("sent_store_text_file")
+    if sent_store_text_file_raw:
+        sent_store_text_file = Path(sent_store_text_file_raw)
+    else:
+        sent_store_text_file = sent_store_file.with_suffix(".txt")
 
     return JobConfig(
         job_id=job_id,
@@ -223,6 +227,7 @@ def _build_job_config(payload: dict[str, Any]) -> JobConfig:
         options=options,
         log_file=log_file,
         sent_store_file=sent_store_file,
+        sent_store_text_file=sent_store_text_file,
     )
 
 

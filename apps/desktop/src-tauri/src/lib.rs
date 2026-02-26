@@ -18,6 +18,12 @@ use sha2::{Digest, Sha256};
 
 const WORKER_EVENT_CHANNEL: &str = "worker-event";
 const RUNTIME_CONFIG_RELATIVE_PATH: &str = "runtime/python_runtime.json";
+const APP_SETTINGS_RELATIVE_PATH: &str = "settings/app_settings.json";
+const APP_DRAFT_RELATIVE_PATH: &str = "config/app_draft.json";
+const DEFAULT_DATA_DIR_NAME: &str = "Bulk-Email-Sender";
+const SAMPLE_RECIPIENTS_RESOURCE_DIR: &str = "assets/samples";
+const SAMPLE_RECIPIENT_JSON_FILE: &str = "recipients_sample.json";
+const SAMPLE_RECIPIENT_XLSX_FILE: &str = "recipients_sample.xlsx";
 const PYTHON_MIN_MAJOR: u32 = 3;
 const PYTHON_MIN_MINOR: u32 = 9;
 
@@ -71,14 +77,21 @@ async fn test_smtp(payload: SmtpPayload) -> Result<Value, String> {
             .timeout(Some(Duration::from_secs(payload.timeout_sec.into())))
             .build();
 
-        match transport.test_connection() {
-            Ok(_) => {
-                Ok(json!({ "type": "smtp_test_succeeded" }))
-            }
-            Err(e) => {
-                Err(format!("SMTP 连接失败: {e}"))
+        // Retry once after 2 s: some SMTP servers (e.g. 126.com) apply a
+        // cold-start delay on the first connection and temporarily reject it.
+        let mut last_err: Option<String> = None;
+        for attempt in 0..2u32 {
+            match transport.test_connection() {
+                Ok(_) => return Ok(json!({ "type": "smtp_test_succeeded" })),
+                Err(e) => {
+                    last_err = Some(format!("SMTP 连接失败: {e}"));
+                    if attempt == 0 {
+                        std::thread::sleep(Duration::from_secs(2));
+                    }
+                }
             }
         }
+        Err(last_err.unwrap())
     })
     .await
     .map_err(|e| format!("SMTP test task failed: {e}"))?
@@ -114,9 +127,9 @@ fn start_send(
         .spawn()
         .map_err(|err| format!("failed to spawn worker: {err}"))?;
 
-    let stdin = child
+    let mut stdin = child
         .stdin
-        .as_mut()
+        .take()
         .ok_or_else(|| "failed to open worker stdin".to_string())?;
     let request = json!({
         "type": "start_send",
@@ -126,6 +139,7 @@ fn start_send(
     writeln!(stdin, "{}", request)
         .and_then(|_| stdin.flush())
         .map_err(|err| format!("failed to write worker request: {err}"))?;
+    // Drop stdin to send EOF — the Python worker loop exits after the job thread finishes.
 
     let stdout = child
         .stdout
@@ -158,15 +172,105 @@ fn cancel_send(state: State<'_, WorkerState>) -> Result<(), String> {
 
 #[tauri::command]
 fn clear_sent_records(app: AppHandle) -> Result<(), String> {
-    let worker_script = resolve_worker_script(&app)?;
-    let project_root = worker_script
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let sent_file = project_root.join("sent_records.jsonl");
-    if sent_file.exists() {
-        fs::remove_file(&sent_file)
-            .map_err(|err| format!("failed to remove sent records: {err}"))?;
+    let paths = resolve_app_paths(&app)?;
+    for target in [paths.sent_store_file, paths.sent_store_text_file] {
+        let file = PathBuf::from(target);
+        if file.exists() {
+            fs::remove_file(&file)
+                .map_err(|err| format!("failed to remove sent records: {err}"))?;
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_app_paths(app: AppHandle) -> Result<AppPaths, String> {
+    resolve_app_paths(&app)
+}
+
+#[tauri::command]
+fn set_data_dir(app: AppHandle, path: String) -> Result<AppPaths, String> {
+    let mut settings = read_app_settings(&app)?;
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        settings.data_dir = None;
+    } else {
+        settings.data_dir = Some(trimmed.to_string());
+    }
+    write_app_settings(&app, &settings)?;
+    resolve_app_paths(&app)
+}
+
+#[tauri::command]
+fn load_app_draft(app: AppHandle) -> Result<Value, String> {
+    let paths = resolve_app_paths(&app)?;
+    let draft_path = PathBuf::from(paths.app_draft_file);
+    if !draft_path.exists() {
+        return Ok(json!({}));
+    }
+    let text = fs::read_to_string(&draft_path)
+        .map_err(|err| format!("读取草稿配置失败: {err}"))?;
+    serde_json::from_str(&text).map_err(|err| format!("草稿配置格式错误: {err}"))
+}
+
+#[tauri::command]
+fn save_app_draft(app: AppHandle, payload: Value) -> Result<(), String> {
+    if !payload.is_object() {
+        return Err("草稿配置必须是 JSON 对象".to_string());
+    }
+    let paths = resolve_app_paths(&app)?;
+    let draft_path = PathBuf::from(paths.app_draft_file);
+    if let Some(parent) = draft_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("创建草稿配置目录失败: {err}"))?;
+    }
+    let text = serde_json::to_string_pretty(&payload).map_err(|err| err.to_string())?;
+    fs::write(draft_path, text).map_err(|err| format!("写入草稿配置失败: {err}"))
+}
+
+#[tauri::command]
+fn open_path(path: String) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Err("路径不能为空".to_string());
+    }
+
+    let raw_target = PathBuf::from(trimmed);
+    let target = if raw_target.exists() {
+        raw_target
+    } else if let Some(parent) = raw_target.parent() {
+        if parent.exists() {
+            parent.to_path_buf()
+        } else {
+            return Err("路径不存在，请先保存一次配置或发送记录".to_string());
+        }
+    } else {
+        return Err("路径不存在，请先保存一次配置或发送记录".to_string());
+    };
+
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut c = Command::new("open");
+        c.arg(&target);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut c = Command::new("explorer");
+        c.arg(&target);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut c = Command::new("xdg-open");
+        c.arg(&target);
+        c
+    };
+
+    let status = command
+        .status()
+        .map_err(|err| format!("打开路径失败: {err}"))?;
+    if !status.success() {
+        return Err("打开路径失败：系统命令返回非 0 状态码".to_string());
     }
     Ok(())
 }
@@ -183,6 +287,20 @@ struct RuntimeStatus {
 #[derive(Serialize, Deserialize, Default)]
 struct RuntimeConfig {
     python_path: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct AppSettings {
+    data_dir: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AppPaths {
+    data_dir: String,
+    sent_store_file: String,
+    sent_store_text_file: String,
+    log_file: String,
+    app_draft_file: String,
 }
 
 #[derive(Deserialize, Default)]
@@ -761,7 +879,7 @@ fn resolve_worker_script(app: &AppHandle) -> Result<PathBuf, String> {
 fn resolve_runtime_status(app: &AppHandle) -> RuntimeStatus {
     if let Some(runtime) = resolve_python_runtime(app) {
         let message = if runtime.source == "system" {
-            "检测到系统 Python，建议导入应用内 runtime 以便交付给非技术用户".to_string()
+            "检测到系统 Python，可直接使用".to_string()
         } else {
             "Python 运行时可用".to_string()
         };
@@ -1058,6 +1176,137 @@ fn write_runtime_config(app: &AppHandle, config: &RuntimeConfig) -> Result<(), S
     fs::write(config_path, text).map_err(|err| format!("写入运行时配置失败: {err}"))
 }
 
+fn app_settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("无法获取应用数据目录: {err}"))?;
+    let settings_path = app_data_dir.join(APP_SETTINGS_RELATIVE_PATH);
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("无法创建应用设置目录: {err}"))?;
+    }
+    Ok(settings_path)
+}
+
+fn read_app_settings(app: &AppHandle) -> Result<AppSettings, String> {
+    let settings_path = app_settings_path(app)?;
+    if !settings_path.exists() {
+        return Ok(AppSettings::default());
+    }
+    let text = fs::read_to_string(settings_path).map_err(|err| format!("读取应用设置失败: {err}"))?;
+    serde_json::from_str(&text).map_err(|err| format!("应用设置格式错误: {err}"))
+}
+
+fn write_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<(), String> {
+    let settings_path = app_settings_path(app)?;
+    let text = serde_json::to_string_pretty(settings).map_err(|err| err.to_string())?;
+    fs::write(settings_path, text).map_err(|err| format!("写入应用设置失败: {err}"))
+}
+
+fn default_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Ok(doc_dir) = app.path().document_dir() {
+        return Ok(doc_dir.join(DEFAULT_DATA_DIR_NAME));
+    }
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("无法获取默认数据目录: {err}"))?;
+    Ok(app_data_dir.join("user-data"))
+}
+
+fn resolve_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let settings = read_app_settings(app)?;
+    let data_dir = match settings.data_dir {
+        Some(path) if !path.trim().is_empty() => PathBuf::from(path),
+        _ => default_data_dir(app)?,
+    };
+    fs::create_dir_all(&data_dir).map_err(|err| format!("无法创建数据目录: {err}"))?;
+    Ok(data_dir)
+}
+
+fn resolve_app_paths(app: &AppHandle) -> Result<AppPaths, String> {
+    let data_dir = resolve_data_dir(app)?;
+    let records_dir = data_dir.join("records");
+    let logs_dir = data_dir.join("logs");
+    let config_dir = data_dir.join("config");
+    fs::create_dir_all(&records_dir).map_err(|err| format!("创建 records 目录失败: {err}"))?;
+    fs::create_dir_all(&logs_dir).map_err(|err| format!("创建 logs 目录失败: {err}"))?;
+    fs::create_dir_all(&config_dir).map_err(|err| format!("创建 config 目录失败: {err}"))?;
+    ensure_sample_recipient_files(app, &data_dir)?;
+
+    Ok(AppPaths {
+        data_dir: data_dir.to_string_lossy().to_string(),
+        sent_store_file: records_dir
+            .join("sent_records.jsonl")
+            .to_string_lossy()
+            .to_string(),
+        sent_store_text_file: records_dir
+            .join("sent_records.txt")
+            .to_string_lossy()
+            .to_string(),
+        log_file: logs_dir.join("email_log.txt").to_string_lossy().to_string(),
+        app_draft_file: data_dir
+            .join(APP_DRAFT_RELATIVE_PATH)
+            .to_string_lossy()
+            .to_string(),
+    })
+}
+
+fn ensure_sample_recipient_files(app: &AppHandle, data_dir: &Path) -> Result<(), String> {
+    for file_name in [SAMPLE_RECIPIENT_JSON_FILE, SAMPLE_RECIPIENT_XLSX_FILE] {
+        let target = data_dir.join(file_name);
+        if target.exists() {
+            continue;
+        }
+
+        let source = resolve_sample_recipient_source_path(app, file_name)
+            .ok_or_else(|| format!("未找到内置示例文件资源: {file_name}"))?;
+        fs::copy(&source, &target).map_err(|err| {
+            format!(
+                "复制内置示例文件失败: {} -> {} ({err})",
+                source.to_string_lossy(),
+                target.to_string_lossy()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn resolve_sample_recipient_source_path(app: &AppHandle, file_name: &str) -> Option<PathBuf> {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let dev_candidate = manifest_dir
+        .join("../../..")
+        .join(SAMPLE_RECIPIENTS_RESOURCE_DIR)
+        .join(file_name);
+    if dev_candidate.exists() {
+        if let Ok(canonical_path) = dev_candidate.canonicalize() {
+            return Some(canonical_path);
+        }
+        return Some(dev_candidate);
+    }
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let direct = resource_dir
+            .join(SAMPLE_RECIPIENTS_RESOURCE_DIR)
+            .join(file_name);
+        if direct.exists() {
+            return Some(direct);
+        }
+
+        for entry in WalkDir::new(&resource_dir)
+            .max_depth(6)
+            .into_iter()
+            .filter_map(Result::ok)
+        {
+            if entry.file_type().is_file() && entry.file_name().to_string_lossy() == file_name {
+                return Some(entry.path().to_path_buf());
+            }
+        }
+    }
+
+    None
+}
+
 fn runtime_root_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let root = app
         .path()
@@ -1156,6 +1405,11 @@ pub fn run() {
             auto_install_runtime,
             auto_detect_runtime,
             clear_sent_records,
+            get_app_paths,
+            set_data_dir,
+            load_app_draft,
+            save_app_draft,
+            open_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -53,12 +53,12 @@ def build_job_from_legacy_config(config: ModuleType, *, job_id: str, recipients)
         max_delay_sec=int(getattr(config, "MAX_DELAY", 0)),
         randomize_order=bool(getattr(config, "RANDOMIZE_ORDER", False)),
         retry_count=3,
-        add_teacher_suffix=bool(getattr(config, "ADD_TEACHER_SUFFIX", False)),
         skip_sent=True,
     )
 
     log_file = Path(getattr(config, "LOG_FILE", "email_log.txt"))
     sent_store_file = log_file.with_name("sent_records.jsonl")
+    sent_store_text_file = log_file
     attachments = [str(path) for path in getattr(config, "ATTACHMENTS", [])]
 
     return JobConfig(
@@ -71,10 +71,11 @@ def build_job_from_legacy_config(config: ModuleType, *, job_id: str, recipients)
         options=options,
         log_file=log_file,
         sent_store_file=sent_store_file,
+        sent_store_text_file=sent_store_text_file,
     )
 
 
 def create_engine(job: JobConfig) -> SendEngine:
-    sent_store = SentStore(job.sent_store_file)
+    sent_store = SentStore(job.sent_store_file, text_path=job.sent_store_text_file)
     smtp_client = SMTPClient(job.smtp)
     return SendEngine(smtp_client=smtp_client, sent_store=sent_store)
